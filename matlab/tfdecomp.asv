@@ -1,0 +1,257 @@
+function [tf_pow, tf_phase, tf_sync, frex] = tfdecomp(cfg)
+
+% Function for wavelet-based time-frequency decomposition of M/EEG data.
+
+%% unpack cfg and setup settings
+
+v2struct(cfg);
+
+% files to use in analysis
+filz = dir([ readdir filename ]);
+
+% frequencies
+if strcmp(scale,'log')
+    frex=logspace(log10(frequencies(1)),log10(frequencies(2)),frequencies(3));
+elseif strcmp(scale,'lin')
+    frex=linspace(frequencies(1),frequencies(2),frequencies(3));
+end
+num_freqs = frequencies(3);
+
+% gaussian width and time
+s=logspace(log10(cycles(1)),log10(cycles(2)),num_freqs)./(2*pi.*frex);
+t=-npoints/srate/2:1/srate:npoints/srate/2-1/srate;
+
+wavelets = zeros(num_freqs,length(t));
+for fi=1:num_freqs
+    wavelets(fi,:)=exp(2*1i*pi*frex(fi).*t).*exp(-t.^2./(2*s(fi)^2));
+end
+
+%% loop through files
+
+for subno=1:length(filz)
+    
+    outputfilename = [ writdir filz(subno).name(1:4) '_' projectname '_tfdecomp.mat' ];
+    
+    if exist(outputfilename,'file'), continue; end
+    load([ readdir filz(subno).name ])
+    
+    % match ALLEEG to EEG if only one dataset
+    if ~exist('ALLEEG','var'), ALLEEG=EEG; end;
+    if ~exist('EEG','var'), EEG=ALLEEG(1); end;
+    
+    %% optional relocking of data
+    %  e.g. if data were originally epoched around stim-onset, and you want
+    %  to do response-locked analysis
+    %  note: in case of e.g. slow responses and relocking to response, you
+    %  need to make sure the epochs are wide enough, because the data are
+    %  shifted but epoch length remains the same
+    
+    if ~strcmp(relocking,'none')
+        
+        % startpoint is a cell of vectors containing the real trial onset times (needed for baselining)
+        startpoint    = cell(length(ALLEEG),1);
+        baselinepoint = cell(length(ALLEEG),1);
+        
+        for condi=1:length(ALLEEG)
+            
+            startpoint{condi}    = zeros(length(ALLEEG(condi).epoch),1);
+            baselinepoint{condi} = zeros(length(ALLEEG(condi).epoch),1);
+            removetrial          = zeros(length(ALLEEG(condi).epoch),1);
+            
+            for ei=1:length(ALLEEG(condi).epoch)
+                
+                try
+                    % find position
+                    [~,reloc  ] = min(abs(ALLEEG(condi).times - ALLEEG(condi).epoch(ei).eventlatency{find(cell2mat(ALLEEG(condi).epoch(ei).eventlatency)==0)+1}));
+                    [~,zeroloc] = min(abs(ALLEEG(condi).times - 0 ));
+                    
+                    % find start point and replace with re-aligned data
+                    startpoint{condi}(ei)    = reloc-zeroloc+1;
+                    baselinepoint{condi}(ei) = zeroloc - (reloc-zeroloc);
+                    ALLEEG(condi).data(:,1:end-startpoint{condi}(ei)+1,ei) = ALLEEG(condi).data(:,startpoint{condi}(ei):end,ei);
+                catch me, removetrial(ei)=1;
+                end
+            end
+            
+            % now remove trials with no response
+            if sum(removetrial)>0
+                fprintf('Note: %i additional trials are removed that could not be relocked to event of interest!\n', sum(removetrial));
+                ALLEEG(condi) = pop_select(ALLEEG(condi),'notrial',find(removetrial));
+            end
+        end % end condition loop
+    end
+    
+    %% initialize output matrices
+    
+    % setup time indexing
+    times2saveidx = zeros(size(times2save));
+    for ti=1:length(times2save)
+        [~,times2saveidx(ti)]=min(abs(EEG.times-times2save(ti)));
+    end
+    
+    % baseline time indices
+    [~,basetimeidx(1)] = min(abs(EEG.times-basetime(1)));
+    [~,basetimeidx(2)] = min(abs(EEG.times-basetime(2)));
+    
+    % empty output matrices
+    [tf_pow, tf_phase] = deal(zeros(length(ALLEEG),length(channels),num_freqs,length(times2saveidx)));
+    if  strcmp(cfg.connectivity,'both')
+        tf_sync  = zeros(length(ALLEEG),length(seeds),length(channels),num_freqs,length(times2saveidx),2);
+    elseif strcmp(cfg.connectivity,'pli') || strcmp(cfg.connectivity,'iscp')
+        tf_sync  = zeros(length(ALLEEG),length(seeds),length(channels),num_freqs,length(times2saveidx));
+    end
+    
+    baselinedata = zeros(length(ALLEEG),ALLEEG(1).nbchan,num_freqs);
+    rawconv = cell(size(ALLEEG));
+    
+    %% Now decompose
+    reverseStr='';
+
+    % loop around conditions
+    for condi=1:nconds
+        
+        Lconv = pow2(nextpow2( npoints*ALLEEG(condi).trials + npoints-1 ));
+        
+        % loop around channels
+        for chani=channels
+            
+            if report_progress
+                % display progress
+                msg = sprintf('Decomposing channel %i/%i of experimental condition %i/%i...',  chani,length(channels),condi,nconds);
+                fprintf([reverseStr, msg]);
+                reverseStr = repmat(sprintf('\b'), 1, length(msg));
+            end
+            
+            EEGfft = fft(reshape(ALLEEG(condi).data(chani,:,:),1,npoints*ALLEEG(condi).trials),Lconv(condi));
+            
+            % loop around frequencies
+            for fi=1:num_freqs
+                
+                % convolve and get analytic signal
+                m = ifft(EEGfft.*fft(wavelets(fi,:),Lconv),Lconv);
+                m = m(1:(npoints*ALLEEG(condi).trials + npoints-1));
+                m = reshape(m(floor((npoints-1)/2):end-1-ceil((npoints-1)/2)),npoints,ALLEEG(condi).trials);
+
+                % enter into TF matrix
+                tf_pow(condi,chani,fi,:)   = mean(abs(m(times2saveidx,:)).^2,2)';
+                tf_phase(condi,chani,fi,:) = abs(mean(exp(1i*angle(m(times2saveidx,:))),2))';
+                
+                % also need single-trial data for baselining
+                if ~strcmp(relocking,'none')
+                    for ti=1:size(m,2)
+                        baselinedata(condi,chani,fi) = baselinedata(condi,chani,fi) + mean(abs(m(baselinepoint{condi}(ti)-min(baselinepoint{condi}(ti)-1,basetimeidx(1)):baselinepoint{condi}(ti)-basetimeidx(2),ti).^2));
+                    end
+                    baselinedata(condi,chani,fi) = baselinedata(condi,chani,fi)./ALLEEG(condi).trials; % average across trials
+                else
+                    baselinedata(condi,chani,fi) = mean(mean(abs(m(basetimeidx(1):basetimeidx(2),:)).^2,1),2);
+                end
+                
+                % for inter-site connectivity we need raw convolution for cross-spectral density matrix
+                if ~isempty(seeds)
+                    % initialize
+                    if chani==1 && fi==1
+                        rawconv = zeros(length(channels),num_freqs,length(times2save),ALLEEG(condi).trials);
+                    end
+                    % populate
+                    rawconv(chani,fi,:,:) = m(times2saveidx,:);
+                end
+                
+            end % end frequency loop
+        end % end channel loop
+        if report_progress
+            fprintf('done.\n')
+            reverseStr='';
+        end
+
+        % inter-site connectivity
+        if ~isempty(seeds)
+            for chanx=1:length(seeds)
+                
+                if report_progress
+                    % display progress
+                    msg = sprintf('Syncing seed %i/%i of experimental condition %i/%i...',  chanx,length(seeds),condi,nconds);
+                    fprintf([reverseStr, msg]);
+                    reverseStr = repmat(sprintf('\b'), 1, length(msg));
+                end
+                
+                for chany=channels
+                    
+                    % cross-spectral density
+                    csd = squeeze(rawconv(strcmpi(seeds{chanx},{EEG.chanlocs.labels}),:,:,:) .* conj(rawconv(chany,:,:,:)));
+                    
+                    % ICPS
+                    if strcmp(cfg.connectivity,'icps') || strcmp(cfg.connectivity,'both')
+                        tmpsync = abs(mean(exp(1i*angle(csd)),3)); % note: equivalent to ispc(fi,:) = abs(mean(exp(1i*(angle(sig1)-angle(sig2))),2));
+                    end
+                    
+                    % weighted phase-lag index (eq. 8 in Vink et al. NeuroImage 2011)
+                    if strcmp(connectivity,'pli') || strcmp(connectivity,'both')
+                        imagsum      = sum(imag(csd),3);
+                        imagsumW     = sum(abs(imag(csd)),3);
+                        debiasfactor = sum(imag(csd).^2,3);
+                        tmppli = (imagsum.^2 - debiasfactor)./(imagsumW.^2 - debiasfactor);
+                    end
+                    
+                    if strcmp(connectivity,'icps')
+                        tf_sync(condi,chanx,chany,:,:) = tmpsync;
+                    elseif strcmp(connectivity,'pli')
+                        tf_sync(condi,chanx,chany,:,:) = tmppli;
+                    elseif strcmp(connectivity,'both')
+                        tf_sync(condi,chanx,chany,:,:,1) = tmpsync;
+                    end
+                    
+                end % chany
+            end % chanx
+            if report_progress
+                fprintf('done.\n')
+            end
+        end
+    end % end condition loop
+    
+    %% db convert: condition-specific baseline
+    
+    if strcmp(baselinetype,'conspec')
+        tf_pow = 10*log10( tf_pow ./ repmat(baselinedata,[ 1 1 1 length(times2save) ]) );
+    elseif strcmp(baselinetype,'conavg')
+        tf_pow = 10*log10( tf_pow ./ repmat(mean(baselinedata,1),[ nconds 1 1 length(times2save) ]) );
+    end
+    
+    %% save results
+    
+    if save_output
+        chanlocs=ALLEEG(1).chanlocs;
+        n=[ALLEEG.trials];
+        if ~isempty(seeds)
+            save(outputfilename,'tf_pow','tf_phase','tf_sync','frex','times2save','chanlocs','n','seeds');
+        else
+            save(outputfilename,'tf_pow','tf_phase','frex','times2save','chanlocs','n','seeds');            
+        end
+    end
+    
+    %% plot output
+    if ~isempty(plot_output)
+        
+        tfwin = [plot_output.time; plot_output.freq];
+        t2plot=dsearchn(times2save',tfwin(1,:)')';
+        f2plot=dsearchn(frex',tfwin(2,:)')';
+
+        figure
+        subplot(221)
+        chan2plot=[];
+        for ch=1:length(plot_output.chan)
+            chan2plot(ch) = find(strcmpi({EEG.chanlocs.labels},plot_output.chan(ch)));
+        end
+        contourf(times2save,frex,squeeze(mean(mean(tf_pow(:,chan2plot,:,:),1),2)),50,'linecolor','none')
+        cl=get(gca,'clim');
+        set(gca,'yscale',scale,'ytick',round(frex(1:4:end)),'clim',[-1*max(abs(cl)) max(abs(cl))])
+        rectangle('position',[tfwin(1,1) tfwin(2,1) tfwin(1,2)-tfwin(1,1)  tfwin(2,2)-tfwin(2,1)])
+
+        subplot(222)
+        topoplot(squeeze(mean(mean(mean( tf_pow(:,:,f2plot(1):f2plot(2),t2plot(1):t2plot(2)),1),3),4)),chanlocs,'electrodes','off','emarker2',{chan2plot(:),'o','k',5,1},'whitebk','on','maplimits',cl)
+    end
+    
+    
+end
+
+%%
+end
