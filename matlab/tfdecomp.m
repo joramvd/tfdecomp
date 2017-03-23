@@ -324,12 +324,17 @@ for subno=1:length(filz)
         title([EEG.chanlocs(chan2plot).labels ' conavg phase'])
 
         subplot(4,2,[6 8])
-        title([num2str(tfwin(1,1)) '-' num2str(tfwin(1,2)) ' ms; ' num2str(tfwin(2,1)) '-' num2str(tfwin(2,2)) ' Hz pow'])
         topoplot(squeeze(mean(mean(mean( tf_phase(:,:,f2plot(1):f2plot(2),t2plot(1):t2plot(2)),1),3),4)),EEG.chanlocs,'electrodes','off','emarker2',{chan2plot(:),'o','k',5,1},'whitebk','on','maplimits',[-1*max(abs(cl)) max(abs(cl))]);
+        title([num2str(tfwin(1,1)) '-' num2str(tfwin(1,2)) ' ms; ' num2str(tfwin(2,1)) '-' num2str(tfwin(2,2)) ' Hz phase'])
         subplot(427)
         plot(times2save,squeeze(mean(mean( tf_phase(:,chan2plot,f2plot(1):f2plot(2),:),2),3)))
         set(gca,'xlim',[times2save(1) times2save(length(times2save))])
         title([EEG.chanlocs(chan2plot).labels ' ' num2str(tfwin(2,1)) '-' num2str(tfwin(2,2)) ' Hz phase'])
+        
+        if plot_output.save
+            saveas(gcf,[ writdir filz(subno).name(1:4) '_' projectname '_tfpowphaseplot.png' ])
+        end
+
 %%
         if strcmp(connectivity,'pli') || strcmp(connectivity,'ispc')
             
@@ -397,12 +402,16 @@ for subno=1:length(filz)
             
             subplot(4,2,[6 8])
             topoplot(squeeze(mean(mean(mean( tmpsync(:,1,:,f2plot(1):f2plot(2),t2plot(1):t2plot(2),2),1),4),5)),EEG.chanlocs,'electrodes','off','emarker2',{[chan2plot(:)' find(strcmpi({EEG.chanlocs.labels},seeds(1)))],'o','k',5,1},'whitebk','on');
-            title([num2str(tfwin(1,1)) '-' num2str(tfwin(1,2)) ' ms; ' num2str(tfwin(2,1)) '-' num2str(tfwin(2,2)) ' Hz ispc'])
+            title([num2str(tfwin(1,1)) '-' num2str(tfwin(1,2)) ' ms; ' num2str(tfwin(2,1)) '-' num2str(tfwin(2,2)) ' Hz dwpli'])
             
             subplot(427)
             plot(times2save,squeeze(mean(mean( tmpsync(:,1,chan2plot,f2plot(1):f2plot(2),:,2),3),4)))
             set(gca,'xlim',[times2save(1) times2save(length(times2save))])
             title([num2str(tfwin(2,1)) '-' num2str(tfwin(2,2)) ' Hz dwpli'])
+        end
+        
+        if plot_output.save
+            saveas(gcf,[ writdir filz(subno).name(1:4) '_' projectname '_tfsyncplot.png' ])
         end
     end
     

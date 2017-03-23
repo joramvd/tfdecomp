@@ -12,7 +12,7 @@ cfg.filename = '*data.mat';
 cfg.projectname = 'sample';
 cfg.relocking = 'none'; % 'none' or event code value; can be number if button response; or e.g. 'saccade' in case of simultaneous eye-tracking
 
-cfg.seeds = {'fcz'};
+cfg.seeds = {'oz'};
 cfg.channels = 1:64;
 cfg.connectivity = 'both'; % 'pli','iscp','both','none'
 cfg.frequencies = [2 40 25]; % from min to max in nsteps
@@ -31,11 +31,11 @@ cfg.nconds = 1;
 
 cfg.report_progress = true;
 cfg.save_output = false;
-cfg.plot_output.chan = {'poz','oz'};
-cfg.plot_output.freq = [8 16];
-cfg.plot_output.time = [200 700];
+cfg.plot_output.chan = {'fcz','fc1','fc2'};
+cfg.plot_output.freq = [3 8];
+cfg.plot_output.time = [50 500];
 cfg.plot_output.connames = {'con1'};
-cfg.save_plot = false;
+cfg.plot_output.save = true;
 
 [tf_pow, tf_phase, tf_sync, frex] = tfdecomp(cfg);
 
