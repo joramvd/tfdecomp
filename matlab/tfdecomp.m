@@ -22,7 +22,6 @@ function [tf_pow, tf_phase, tf_sync, frex] = tfdecomp(cfg)
 % -- raw data specifics needed to compute filter ingredients:
 % cfg.srate = 256;
 % cfg.epochtime = [-1 1.5];
-% cfg.npoints = cfg.srate*sum(abs(cfg.epochtime));
 %
 % -- you can relock data to a response or other event:
 % cfg.relocking = 'none'; % 'none' or event code value; can be number if button response; or e.g. 'saccade' in case of simultaneous eye-tracking 
@@ -77,6 +76,7 @@ end
 num_freqs = frequencies(3);
 
 % gaussian width and time
+npoints = srate*sum(abs(epochtime));
 s=logspace(log10(cycles(1)),log10(cycles(2)),num_freqs)./(2*pi.*frex);
 t=-npoints/srate/2:1/srate:npoints/srate/2-1/srate;
 
