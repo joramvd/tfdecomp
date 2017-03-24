@@ -12,7 +12,7 @@ cfg.filename = '*data.mat';
 cfg.projectname = 'sample';
 cfg.relocking = 'none'; % 'none' or event code value; can be number if button response; or e.g. 'saccade' in case of simultaneous eye-tracking
 
-cfg.seeds = {'oz'};
+cfg.seeds = {'oz'}; % channel name or empty {}
 cfg.channels = 1:64;
 cfg.connectivity = 'both'; % 'pli','iscp','both','none'
 cfg.frequencies = [2 40 25]; % from min to max in nsteps
@@ -23,18 +23,17 @@ cfg.basetime = [-500 -200];
 cfg.stimbase = true; % in case of relocking the data, do you want the baseline to be pre-stimulus?
 cfg.baselinetype = 'conavg'; % 'conavg' or 'conspec'
 
-cfg.srate = 256;
+cfg.srate = 512;
 cfg.epochtime = [-1 1.5];
-cfg.npoints = cfg.srate*sum(abs(cfg.epochtime));
-
-cfg.nconds = 1;
 
 cfg.report_progress = true;
-cfg.save_output = false;
+cfg.save_output = true;
+cfg.overwrite = false;
+cfg.plot_output = []; % if left empty (so below removed or commented out), no plot will be generated
 cfg.plot_output.chan = {'fcz','fc1','fc2'};
 cfg.plot_output.freq = [3 8];
 cfg.plot_output.time = [50 500];
-cfg.plot_output.connames = {'con1'};
+cfg.plot_output.connames = {'conA','conB'};
 cfg.plot_output.save = true;
 
 [tf_pow, tf_phase, tf_sync, frex] = tfdecomp(cfg);

@@ -20,7 +20,9 @@ function [tf_pow, tf_phase, tf_sync, frex] = tfdecomp(cfg)
 % cfg.projectname = 'sample'; 
 %
 % -- raw data specifics needed to compute filter ingredients:
-% cfg.srate = 256;
+% -- epochtime needs to correspond to actual start and end time of raw data
+% -- epochs
+% cfg.srate = 512;
 % cfg.epochtime = [-1 1.5];
 %
 % -- you can relock data to a response or other event:
@@ -30,7 +32,7 @@ function [tf_pow, tf_phase, tf_sync, frex] = tfdecomp(cfg)
 % -- to take as seed for connectivity analysis
 % cfg.channels = 1:64;
 % cfg.connectivity = 'both'; % 'pli','iscp','both','none'
-% cfg.seeds = {'fcz'}; % leave empty if no connectivity
+% cfg.seeds = {'fcz'}; % leave empty ({}) if no connectivity
 %
 % -- frequency, time and baseline info:
 % cfg.frequencies = [2 40 25]; % from min to max in nsteps
@@ -41,12 +43,10 @@ function [tf_pow, tf_phase, tf_sync, frex] = tfdecomp(cfg)
 % cfg.stimbase = true; % in case of relocking the data, do you want the baseline to be pre-stimulus?
 % cfg.baselinetype = 'conavg'; % 'conavg' or 'conspec'
 % 
-% -- number of conditions
-% cfg.nconds = 1;
-% 
 % -- other administrative stuff:
 % cfg.report_progress = true;
 % cfg.save_output = false;
+% cfg.overwrite = false;
 % cfg.plot_output.chan = {'poz','oz'};
 % cfg.plot_output.freq = [8 16];
 % cfg.plot_output.time = [200 700];
@@ -87,11 +87,16 @@ end
 
 %% loop through files
 
+nosubs = false;
 for subno=1:length(filz)
     
     outputfilename = [ writdir filz(subno).name(1:4) '_' projectname '_tfdecomp.mat' ];
     
-    if exist(outputfilename,'file'), continue; end
+    if exist(outputfilename,'file') && ~overwrite
+        nosubs = true;
+        continue; 
+    end
+    fprintf('Running time-frequency decomposition for subject %i/%i - Loading data...\n',subno,length(filz))
     load([ readdir filz(subno).name ])
     
     % match ALLEEG to EEG if only one dataset
@@ -158,15 +163,18 @@ for subno=1:length(filz)
         tf_sync  = zeros(length(ALLEEG),length(seeds),length(channels),num_freqs,length(times2saveidx),2);
     elseif strcmp(cfg.connectivity,'pli') || strcmp(cfg.connectivity,'iscp')
         tf_sync  = zeros(length(ALLEEG),length(seeds),length(channels),num_freqs,length(times2saveidx));
+    else
+        tf_sync = NaN;
     end
     
-    baselinedata = zeros(length(ALLEEG),ALLEEG(1).nbchan,num_freqs);
+    baselinedata = zeros(length(ALLEEG),length(channels),num_freqs);
     rawconv = cell(size(ALLEEG));
     
     %% Now decompose
     reverseStr='';
 
     % loop around conditions
+    nconds = length(ALLEEG);
     for condi=1:nconds
         
         Lconv = pow2(nextpow2( npoints*ALLEEG(condi).trials + npoints-1 ));
@@ -181,7 +189,7 @@ for subno=1:length(filz)
                 reverseStr = repmat(sprintf('\b'), 1, length(msg));
             end
             
-            EEGfft = fft(reshape(ALLEEG(condi).data(chani,:,:),1,npoints*ALLEEG(condi).trials),Lconv(condi));
+            EEGfft = fft(reshape(ALLEEG(condi).data(chani,:,:),1,npoints*ALLEEG(condi).trials),Lconv);
             
             % loop around frequencies
             for fi=1:num_freqs
@@ -314,7 +322,9 @@ for subno=1:length(filz)
         plot(times2save,squeeze(mean(mean( tf_pow(:,chan2plot,f2plot(1):f2plot(2),:),2),3)))
         set(gca,'xlim',[times2save(1) times2save(length(times2save))])
         title([EEG.chanlocs(chan2plot).labels ' ' num2str(tfwin(2,1)) '-' num2str(tfwin(2,2)) ' Hz pow'])
-
+        legend(plot_output.connames);
+        legend boxoff
+        
         subplot(425)
         contourf(times2save,frex,squeeze(mean(mean(tf_phase(:,chan2plot,:,:),1),2)),50,'linecolor','none')
         cl=get(gca,'clim');
@@ -330,7 +340,9 @@ for subno=1:length(filz)
         plot(times2save,squeeze(mean(mean( tf_phase(:,chan2plot,f2plot(1):f2plot(2),:),2),3)))
         set(gca,'xlim',[times2save(1) times2save(length(times2save))])
         title([EEG.chanlocs(chan2plot).labels ' ' num2str(tfwin(2,1)) '-' num2str(tfwin(2,2)) ' Hz phase'])
-        
+        legend(plot_output.connames);
+        legend boxoff
+
         if plot_output.save
             saveas(gcf,[ writdir filz(subno).name(1:4) '_' projectname '_tfpowphaseplot.png' ])
         end
@@ -366,6 +378,8 @@ for subno=1:length(filz)
             plot(times2save,squeeze(mean(mean( tmpsync(:,1,chan2plot,f2plot(1):f2plot(2),:),3),4)))
             set(gca,'xlim',[times2save(1) times2save(length(times2save))])
             title([num2str(tfwin(2,1)) '-' num2str(tfwin(2,2)) ' Hz sync'])
+            legend(plot_output.connames);
+            legend boxoff
             
         elseif strcmp(connectivity,'both')
             
@@ -392,7 +406,9 @@ for subno=1:length(filz)
             plot(times2save,squeeze(mean(mean( tmpsync(:,1,chan2plot,f2plot(1):f2plot(2),:,1),3),4)))
             set(gca,'xlim',[times2save(1) times2save(length(times2save))])
             title([num2str(tfwin(2,1)) '-' num2str(tfwin(2,2)) ' Hz ispc'])
-           
+            legend(plot_output.connames);
+            legend boxoff
+            
             subplot(425)
             contourf(times2save,frex,squeeze(mean(mean(tmpsync(:,1,chan2plot,:,:,2),1),3)),50,'linecolor','none')
             set(gca,'yscale',scale,'ytick',round(frex(1:4:end)))
@@ -408,6 +424,8 @@ for subno=1:length(filz)
             plot(times2save,squeeze(mean(mean( tmpsync(:,1,chan2plot,f2plot(1):f2plot(2),:,2),3),4)))
             set(gca,'xlim',[times2save(1) times2save(length(times2save))])
             title([num2str(tfwin(2,1)) '-' num2str(tfwin(2,2)) ' Hz dwpli'])
+            legend(plot_output.connames);
+            legend boxoff
         end
         
         if plot_output.save
@@ -415,6 +433,12 @@ for subno=1:length(filz)
         end
     end
     
+end
+
+%%
+if nosubs
+    [tf_pow, tf_phase, tf_sync, frex] = deal(NaN);
+    disp('All subjects analyzed and saved, nothing to return...')
 end
 
 %%
