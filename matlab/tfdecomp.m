@@ -1,4 +1,4 @@
-function [tf_pow, tf_phase, tf_sync, frex] = tfdecomp(cfg)
+function [tf_pow, tf_phase, tf_sync, dim] = tfdecomp(cfg)
 
 % Function for wavelet-based time-frequency decomposition of M/EEG data.
 % Largely based on custom-written code from Mike X Cohen
@@ -42,7 +42,9 @@ function [tf_pow, tf_phase, tf_sync, frex] = tfdecomp(cfg)
 % cfg.basetime = [-500 -200];
 % cfg.stimbase = true; % in case of relocking the data, do you want the baseline to be pre-stimulus?
 % cfg.baselinetype = 'conavg'; % 'conavg' or 'conspec'
-% 
+% cfg.erpsubract = false; % if true, non-phase-locked (i.e. "induced") power will be computed by subtracting the ERP from each single trial
+% cfg.matchtrialn = true; % if true, conditions will be equated in terms of trial count (so SNR is comparable across conditions)
+%
 % -- other administrative stuff:
 % cfg.report_progress = true;
 % cfg.save_output = false;
@@ -66,6 +68,9 @@ end
 
 % files to use in analysis
 filz = dir([ readdir filename ]);
+if isempty(filz)
+    error('No files to be loaded...!')
+end
 
 % frequencies
 if strcmp(scale,'log')
@@ -143,6 +148,28 @@ for subno=1:length(filz)
                 ALLEEG(condi) = pop_select(ALLEEG(condi),'notrial',find(removetrial));
             end
         end % end condition loop
+    end
+    
+    %% optional ERP subraction to compute non-phase locked power
+    
+    if erpsubtract
+        for condi = 1:length(ALLEEG)
+            erp = mean(ALLEEG(condi).data,3);
+            ALLEEG(condi).data = ALLEEG(condi).data-repmat(erp,[1 1 ALLEEG(condi).trials]);
+        end
+    end
+    
+    %% optional matching of conditions in trial count
+    
+    if matchtrialn
+        n = [ALLEEG.trials];
+        [nmin,cmin] = min(n);
+        for condi=1:length(ALLEEG)
+            if condi~=cmin
+                trialsel = randperm(ALLEEG(condi).trials);
+                ALLEEG(condi) = pop_select(ALLEEG(condi),'trial',sort(trialsel(1:nmin)));
+            end
+        end
     end
     
     %% initialize output matrices
@@ -272,6 +299,7 @@ for subno=1:length(filz)
             end % chanx
             if report_progress
                 fprintf('done.\n')
+                reverseStr='';
             end
         end
     end % end condition loop
@@ -435,9 +463,16 @@ for subno=1:length(filz)
     
 end
 
+% for plotting outside main function
+dim = [];
+dim.times = times2save;
+dim.freqs = frex;
+dim.chans = EEG.chanlocs;
+dim.cfg_prev = cfg;
+
 %%
 if nosubs
-    [tf_pow, tf_phase, tf_sync, frex] = deal(NaN);
+    [tf_pow, tf_phase, tf_sync, dim] = deal(NaN);
     disp('All subjects analyzed and saved, nothing to return...')
 end
 

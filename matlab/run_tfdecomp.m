@@ -22,6 +22,8 @@ cfg.times2save = -200:25:1000;
 cfg.basetime = [-500 -200];
 cfg.stimbase = true; % in case of relocking the data, do you want the baseline to be pre-stimulus?
 cfg.baselinetype = 'conavg'; % 'conavg' or 'conspec'
+cfg.erpsubtract = true; % if true, non-phase-locked (i.e. "induced") power will be computed by subtracting the ERP from each single trial
+cfg.matchtrialn = true; % if true, conditions will be equated in terms of trial count (so SNR is comparable across conditions)
 
 cfg.srate = 512;
 cfg.epochtime = [-1 1.5];
@@ -36,5 +38,5 @@ cfg.plot_output.time = [50 500];
 cfg.plot_output.connames = {'conA','conB'};
 cfg.plot_output.save = true;
 
-[tf_pow, tf_phase, tf_sync, frex] = tfdecomp(cfg);
+[tf_pow, tf_phase, tf_sync, dim] = tfdecomp(cfg);
 
