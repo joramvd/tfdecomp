@@ -45,6 +45,7 @@ cfg.markevents = [0 500 1500];
 tfmultiplot(cfg,tf_sync,dim);
 
 %% Example of condition average power, comparing groups of channels
+%  useful for e.g. lateralization analysis
 
 cfg = [];
 
@@ -57,6 +58,6 @@ cfg.scale = 'log';
 cfg.connames = {'condition A','condition B'};
 cfg.markevents = [0 500 1500];
 
-tfmultiplot(cfg,tf_pow_induced,dim);
+tfmultiplot(cfg,tf_pow,dim);
 
 
