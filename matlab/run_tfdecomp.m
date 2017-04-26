@@ -1,6 +1,6 @@
-clear, close all
-restoredefaultpath
-cd('Z:\Stuff\Git\tfdecomp\matlab');
+% Example code of how to call tfdecomp function
+% -- work in progress is to have an option to save single trial power for regression analysis
+
 
 %%
 cfg = [];

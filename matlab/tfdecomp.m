@@ -26,12 +26,12 @@ function [tf_pow, tf_phase, tf_sync, dim] = tfdecomp(cfg)
 % cfg.epochtime = [-1 1.5];
 %
 % -- you can relock data to a response or other event:
-% cfg.relocking = 'none'; % 'none' or event code value; can be number if button response; or e.g. 'saccade' in case of simultaneous eye-tracking 
+% cfg.relocking = 'none'; % 'none' or event code value; can be number if button response; or e.g. 'saccade' in case of simultaneous eye-tracking; you can also write 'false' or just leave empty
 %
 % -- channel info: number of channels to analyze, and which channel label
 % -- to take as seed for connectivity analysis
 % cfg.channels = 1:64;
-% cfg.connectivity = 'both'; % 'pli','iscp','both','none'
+% cfg.connectivity = 'both'; % 'pli','iscp','both','none'; or false, or just leave empty
 % cfg.seeds = {'fcz'}; % leave empty ({}) if no connectivity
 %
 % -- frequency, time and baseline info:
@@ -44,6 +44,7 @@ function [tf_pow, tf_phase, tf_sync, dim] = tfdecomp(cfg)
 % cfg.baselinetype = 'conavg'; % 'conavg' or 'conspec'
 % cfg.erpsubract = false; % if true, non-phase-locked (i.e. "induced") power will be computed by subtracting the ERP from each single trial
 % cfg.matchtrialn = true; % if true, conditions will be equated in terms of trial count (so SNR is comparable across conditions)
+% cfg.keeptrials = false; % if true, no trial-average dbpower is computed, but output is a ncondition cell array with single trial raw power; you don't need to specifiy any baseline info in this case
 %
 % -- other administrative stuff:
 % cfg.report_progress = true;
@@ -64,6 +65,19 @@ path_list_cell = regexp(path,pathsep,'Split');
 if (exist(eeglab_path,'dir') == 7) && ~any(ismember(eeglab_path,path_list_cell))
      % addpath(genpath(eeglab_path),'-begin');
      addpath(genpath(eeglab_path));
+end
+
+% if not specified, set fields to false
+fields2check = {'basetime','keeptrials','erpsubtract','matchtrialn','relocking','connectivity'};
+for fieldi = 1:length(fields2check)
+    if isfield(cfg,fields2check(fieldi))
+        eval([fields2check{fieldi} ' = ' fields2check{fieldi} ';']);
+        if strcmp(eval(fields2check{fieldi}),'none')
+            eval([fields2check{fieldi} ' = false;']);
+        end
+    else
+        eval([fields2check{fieldi} ' = false;']);
+    end
 end
 
 % files to use in analysis
@@ -115,7 +129,7 @@ for subno=1:length(filz)
     %  need to make sure the epochs are wide enough, because the data are
     %  shifted but epoch length remains the same
     
-    if ~strcmp(relocking,'none')
+    if relocking
         
         % startpoint is a cell of vectors containing the real trial onset times (needed for baselining)
         startpoint    = cell(length(ALLEEG),1);
@@ -181,22 +195,26 @@ for subno=1:length(filz)
     end
     
     % baseline time indices
-    [~,basetimeidx(1)] = min(abs(EEG.times-basetime(1)));
-    [~,basetimeidx(2)] = min(abs(EEG.times-basetime(2)));
+    if basetime
+        [~,basetimeidx(1)] = min(abs(EEG.times-basetime(1)));
+        [~,basetimeidx(2)] = min(abs(EEG.times-basetime(2)));
+        baselinedata = zeros(length(ALLEEG),length(channels),num_freqs);
+    end
     
     % empty output matrices
-    [tf_pow, tf_phase] = deal(zeros(length(ALLEEG),length(channels),num_freqs,length(times2saveidx)));
-    if  strcmp(cfg.connectivity,'both')
+    if keeptrials
+        tf_pow = cell(size(ALLEEG));
+    else
+        [tf_pow, tf_phase] = deal(zeros(length(ALLEEG),length(channels),num_freqs,length(times2saveidx)));
+    end
+    if  strcmp(connectivity,'both')
         tf_sync  = zeros(length(ALLEEG),length(seeds),length(channels),num_freqs,length(times2saveidx),2);
-    elseif strcmp(cfg.connectivity,'pli') || strcmp(cfg.connectivity,'iscp')
+    elseif strcmp(connectivity,'pli') || strcmp(connectivity,'iscp')
         tf_sync  = zeros(length(ALLEEG),length(seeds),length(channels),num_freqs,length(times2saveidx));
     else
         tf_sync = NaN;
     end
-    
-    baselinedata = zeros(length(ALLEEG),length(channels),num_freqs);
-    rawconv = cell(size(ALLEEG));
-    
+        
     %% Now decompose
     reverseStr='';
 
@@ -227,21 +245,25 @@ for subno=1:length(filz)
                 m = reshape(m(floor((npoints-1)/2):end-1-ceil((npoints-1)/2)),npoints,ALLEEG(condi).trials);
 
                 % enter into TF matrix
-                tf_pow(condi,chani,fi,:)   = mean(abs(m(times2saveidx,:)).^2,2)';
-                tf_phase(condi,chani,fi,:) = abs(mean(exp(1i*angle(m(times2saveidx,:))),2))';
+                if ~keeptrials
+                    tf_pow(condi,chani,fi,:)   = mean(abs(m(times2saveidx,:)).^2,2)';
+                    tf_phase(condi,chani,fi,:) = abs(mean(exp(1i*angle(m(times2saveidx,:))),2))';
+                end
                 
                 % also need single-trial data for baselining
-                if ~strcmp(relocking,'none')
-                    for ti=1:size(m,2)
-                        baselinedata(condi,chani,fi) = baselinedata(condi,chani,fi) + mean(abs(m(baselinepoint{condi}(ti)-min(baselinepoint{condi}(ti)-1,basetimeidx(1)):baselinepoint{condi}(ti)-basetimeidx(2),ti).^2));
+                if basetime
+                    if relocking
+                        for ti=1:size(m,2)
+                            baselinedata(condi,chani,fi) = baselinedata(condi,chani,fi) + mean(abs(m(baselinepoint{condi}(ti)-min(baselinepoint{condi}(ti)-1,basetimeidx(1)):baselinepoint{condi}(ti)-basetimeidx(2),ti).^2));
+                        end
+                        baselinedata(condi,chani,fi) = baselinedata(condi,chani,fi)./ALLEEG(condi).trials; % average across trials
+                    else
+                        baselinedata(condi,chani,fi) = mean(mean(abs(m(basetimeidx(1):basetimeidx(2),:)).^2,1),2);
                     end
-                    baselinedata(condi,chani,fi) = baselinedata(condi,chani,fi)./ALLEEG(condi).trials; % average across trials
-                else
-                    baselinedata(condi,chani,fi) = mean(mean(abs(m(basetimeidx(1):basetimeidx(2),:)).^2,1),2);
                 end
                 
                 % for inter-site connectivity we need raw convolution for cross-spectral density matrix
-                if ~isempty(seeds)
+                if connectivity || keeptrials
                     % initialize
                     if chani==1 && fi==1
                         rawconv = zeros(length(channels),num_freqs,length(times2save),ALLEEG(condi).trials);
@@ -256,9 +278,9 @@ for subno=1:length(filz)
             fprintf('done.\n')
             reverseStr='';
         end
-
+        
         % inter-site connectivity
-        if ~isempty(seeds)
+        if connectivity
             for chanx=1:length(seeds)
                 
                 if report_progress
@@ -274,7 +296,7 @@ for subno=1:length(filz)
                     csd = squeeze(rawconv(strcmpi(seeds{chanx},{EEG.chanlocs.labels}),:,:,:) .* conj(rawconv(chany,:,:,:)));
                     
                     % ICPS
-                    if strcmp(cfg.connectivity,'icps') || strcmp(cfg.connectivity,'both')
+                    if strcmp(connectivity,'icps') || strcmp(connectivity,'both')
                         tmpsync = abs(mean(exp(1i*angle(csd)),3)); % note: equivalent to ispc(fi,:) = abs(mean(exp(1i*(angle(sig1)-angle(sig2))),2));
                     end
                     
@@ -302,15 +324,23 @@ for subno=1:length(filz)
                 reverseStr='';
             end
         end
+        
+        % single trial power
+        if keeptrials
+            tf_pow{condi} = abs(rawconv(:,:,times2saveidx,:)).^2;
+        end
+        
     end % end condition loop
     
     %% db convert: condition-specific baseline
-    if strcmp(baselinetype,'conspec')
-        tf_pow = 10*log10( tf_pow ./ repmat(baselinedata,[ 1 1 1 length(times2save) ]) );
-    elseif strcmp(baselinetype,'conavg')
-        tf_pow = 10*log10( tf_pow ./ repmat(mean(baselinedata,1),[ nconds 1 1 length(times2save) ]) );
+    if basetime
+        if strcmp(baselinetype,'conspec')
+            tf_pow = 10*log10( tf_pow ./ repmat(baselinedata,[ 1 1 1 length(times2save) ]) );
+        elseif strcmp(baselinetype,'conavg')
+            tf_pow = 10*log10( tf_pow ./ repmat(mean(baselinedata,1),[ nconds 1 1 length(times2save) ]) );
+        end
     end
-    
+        
     %% save results   
     if save_output
         chanlocs=ALLEEG(1).chanlocs;
@@ -467,7 +497,7 @@ end
 dim = [];
 dim.times = times2save;
 dim.freqs = frex;
-dim.chans = EEG.chanlocs;
+dim.chans = EEG.chanlocs(channels);
 dim.cfg_prev = cfg;
 
 %%
