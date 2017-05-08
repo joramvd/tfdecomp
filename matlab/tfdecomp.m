@@ -26,12 +26,12 @@ function [tf_pow, tf_phase, tf_sync, dim] = tfdecomp(cfg)
 % cfg.epochtime = [-1 1.5];
 %
 % -- you can relock data to a response or other event:
-% cfg.relocking = 'none'; % 'none' or event code value; can be number if button response; or e.g. 'saccade' in case of simultaneous eye-tracking; you can also write 'false' or just leave empty
+% cfg.relocking = 'none'; % 'none' or event code value; can be number if button response; or e.g. 'saccade' in case of simultaneous eye-tracking 
 %
 % -- channel info: number of channels to analyze, and which channel label
 % -- to take as seed for connectivity analysis
 % cfg.channels = 1:64;
-% cfg.connectivity = 'both'; % 'pli','iscp','both','none'; or false, or just leave empty
+% cfg.connectivity = 'both'; % 'pli','iscp','both','none'
 % cfg.seeds = {'fcz'}; % leave empty ({}) if no connectivity
 %
 % -- frequency, time and baseline info:
@@ -44,7 +44,6 @@ function [tf_pow, tf_phase, tf_sync, dim] = tfdecomp(cfg)
 % cfg.baselinetype = 'conavg'; % 'conavg' or 'conspec'
 % cfg.erpsubract = false; % if true, non-phase-locked (i.e. "induced") power will be computed by subtracting the ERP from each single trial
 % cfg.matchtrialn = true; % if true, conditions will be equated in terms of trial count (so SNR is comparable across conditions)
-% cfg.keeptrials = false; % if true, no trial-average dbpower is computed, but output is a ncondition cell array with single trial raw power; you don't need to specifiy any baseline info in this case
 %
 % -- other administrative stuff:
 % cfg.report_progress = true;
@@ -340,15 +339,24 @@ for subno=1:length(filz)
             tf_pow = 10*log10( tf_pow ./ repmat(mean(baselinedata,1),[ nconds 1 1 length(times2save) ]) );
         end
     end
-        
+
+    % for plotting outside main function
+    dim = [];
+    dim.times = times2save;
+    dim.freqs = frex;
+    dim.chans = EEG.chanlocs(channels);
+    dim.seeds = seeds;
+    dim.ntrials = n;
+    dim.cfg_prev = cfg;
+
     %% save results   
     if save_output
         chanlocs=ALLEEG(1).chanlocs;
         n=[ALLEEG.trials];
         if ~isempty(seeds)
-            save(outputfilename,'tf_pow','tf_phase','tf_sync','frex','times2save','chanlocs','n','seeds');
+            save(outputfilename,'tf_pow','tf_phase','tf_sync','dim');
         else
-            save(outputfilename,'tf_pow','tf_phase','frex','times2save','chanlocs','n','seeds');            
+            save(outputfilename,'tf_pow','tf_phase','dim');            
         end
     end
     
@@ -492,13 +500,6 @@ for subno=1:length(filz)
     end
     
 end
-
-% for plotting outside main function
-dim = [];
-dim.times = times2save;
-dim.freqs = frex;
-dim.chans = EEG.chanlocs(channels);
-dim.cfg_prev = cfg;
 
 %%
 if nosubs
