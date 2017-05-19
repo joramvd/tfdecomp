@@ -67,7 +67,7 @@ if (exist(eeglab_path,'dir') == 7) && ~any(ismember(eeglab_path,path_list_cell))
 end
 
 % if not specified, set fields to false
-fields2check = {'basetime','keeptrials','erpsubtract','matchtrialn','relocking','connectivity'};
+fields2check = {'basetime','keeptrials','erpsubtract','matchtrialn','relocking','connectivity','plot_output','report_progress','overwrite'};
 for fieldi = 1:length(fields2check)
     if isfield(cfg,fields2check(fieldi))
         eval([fields2check{fieldi} ' = ' fields2check{fieldi} ';']);
@@ -79,8 +79,13 @@ for fieldi = 1:length(fields2check)
     end
 end
 
+% check output dir
+if ~exist(writdir,'dir')
+    mkdir(writdir)
+end
+
 % files to use in analysis
-filz = dir([ readdir filename ]);
+filz = dir([ readdir filesep filename ]);
 if isempty(filz)
     error('No files to be loaded...!')
 end
@@ -108,14 +113,14 @@ end
 nosubs = false;
 for subno=1:length(filz)
     
-    outputfilename = [ writdir filz(subno).name(1:4) '_' projectname '_tfdecomp.mat' ];
+    outputfilename = [ writdir filz(subno).name(1:length(prefix)) '_' projectname '_tfdecomp.mat' ];
     
     if exist(outputfilename,'file') && ~overwrite
         nosubs = true;
         continue; 
     end
     fprintf('Running time-frequency decomposition for subject %i/%i - Loading data...\n',subno,length(filz))
-    load([ readdir filz(subno).name ])
+    load([ readdir filesep filz(subno).name ])
     
     % match ALLEEG to EEG if only one dataset
     if ~exist('ALLEEG','var'), ALLEEG=EEG; end;
@@ -208,7 +213,7 @@ for subno=1:length(filz)
     end
     if  strcmp(connectivity,'both')
         tf_sync  = zeros(length(ALLEEG),length(seeds),length(channels),num_freqs,length(times2saveidx),2);
-    elseif strcmp(connectivity,'pli') || strcmp(connectivity,'iscp')
+    elseif strcmp(connectivity,'pli') || strcmp(connectivity,'ispc')
         tf_sync  = zeros(length(ALLEEG),length(seeds),length(channels),num_freqs,length(times2saveidx));
     else
         tf_sync = NaN;
@@ -233,7 +238,12 @@ for subno=1:length(filz)
                 reverseStr = repmat(sprintf('\b'), 1, length(msg));
             end
             
-            EEGfft = fft(reshape(ALLEEG(condi).data(chani,:,:),1,npoints*ALLEEG(condi).trials),Lconv);
+            try
+                EEGfft = fft(reshape(ALLEEG(condi).data(chani,:,:),1,npoints*ALLEEG(condi).trials),Lconv);
+            catch me
+                warning('More channels specified than present in data, rest is set to zero')
+                continue
+            end
             
             % loop around frequencies
             for fi=1:num_freqs
@@ -262,7 +272,7 @@ for subno=1:length(filz)
                 end
                 
                 % for inter-site connectivity we need raw convolution for cross-spectral density matrix
-                if connectivity || keeptrials
+                if connectivity | keeptrials
                     % initialize
                     if chani==1 && fi==1
                         rawconv = zeros(length(channels),num_freqs,length(times2save),ALLEEG(condi).trials);
@@ -294,8 +304,8 @@ for subno=1:length(filz)
                     % cross-spectral density
                     csd = squeeze(rawconv(strcmpi(seeds{chanx},{EEG.chanlocs.labels}),:,:,:) .* conj(rawconv(chany,:,:,:)));
                     
-                    % ICPS
-                    if strcmp(connectivity,'icps') || strcmp(connectivity,'both')
+                    % ISPC
+                    if strcmp(connectivity,'ispc') || strcmp(connectivity,'both')
                         tmpsync = abs(mean(exp(1i*angle(csd)),3)); % note: equivalent to ispc(fi,:) = abs(mean(exp(1i*(angle(sig1)-angle(sig2))),2));
                     end
                     
@@ -307,7 +317,7 @@ for subno=1:length(filz)
                         tmppli = (imagsum.^2 - debiasfactor)./(imagsumW.^2 - debiasfactor);
                     end
                     
-                    if strcmp(connectivity,'icps')
+                    if strcmp(connectivity,'ispc')
                         tf_sync(condi,chanx,chany,:,:) = tmpsync;
                     elseif strcmp(connectivity,'pli')
                         tf_sync(condi,chanx,chany,:,:) = tmppli;
@@ -344,16 +354,20 @@ for subno=1:length(filz)
     dim = [];
     dim.times = times2save;
     dim.freqs = frex;
-    dim.chans = EEG.chanlocs(channels);
-    dim.seeds = seeds;
-    dim.ntrials = n;
+    try
+        dim.chans = EEG.chanlocs(channels);
+    catch me
+        warning('No channel locations known; possibly you are analyzing component time series instead of scalp-channel time series?')
+    end
+    if connectivity
+        dim.seeds = seeds;
+    end
+    dim.ntrials = [ALLEEG.trials];
     dim.cfg_prev = cfg;
 
     %% save results   
     if save_output
-        chanlocs=ALLEEG(1).chanlocs;
-        n=[ALLEEG.trials];
-        if ~isempty(seeds)
+        if connectivity
             save(outputfilename,'tf_pow','tf_phase','tf_sync','dim');
         else
             save(outputfilename,'tf_pow','tf_phase','dim');            
@@ -361,7 +375,7 @@ for subno=1:length(filz)
     end
     
     %% plot output
-    if ~isempty(plot_output)
+    if strcmp(plot_output.show,'yes')
         
         tfwin = [plot_output.time; plot_output.freq];
         t2plot=dsearchn(times2save',tfwin(1,:)')';
