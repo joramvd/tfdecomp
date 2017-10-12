@@ -3,28 +3,31 @@ function [tf_pow, varargout] = tfdecomp(cfg,eegdat,varargin)
 % Function for wavelet-based time-frequency decomposition of M/EEG data.
 % Largely based on custom-written code from Mike X Cohen
 %
-% This function as it currently stands, needs a data structure according to the eeglab format
-% It further needs a cfg structure (inspired by Fieldtrip functionality)
+% This function as it currently stands, needs a cell array with one cell
+% per experimental condition, and each cell containing a channel-time-trial
+% matrix of raw EEG data
 %
-% This cfg necessitates the following:
+% First input is a cfg structure (analogous to Fieldtrip functionality),
+% with the following:
 %
 % -- Path/filenames for saving:
-% cfg.writdir = cfg.readdir;
-% cfg.filename = '*data.mat';
-%
-% -- project name; this word, in addition to the first four letters of the
-% -- filename (assuming a 'pp0x' prefix of 'proefpersoon number x') will be
-% -- added to the outputfilename
-% cfg.projectname = 'sample';
+% cfg.writdir = 'path/to/folder/;
+% cfg.filename = 'example_tf.mat';
 %
 % -- raw data specifics needed to compute filter ingredients:
-% -- epochtime needs to correspond to actual start and end time of raw data
-% -- epochs
-% cfg.srate = 512;
-% cfg.epochtime = [-1 1.5];
+% -- the sampling rate is either contained in the eeglab or fieldtrip data
+% -- strucures, or you happen to know the specific number, just make sure it
+% -- corresponds to the data used for input
+% -- eegtime has all the time points of the epoch, in milliseconds
+% -- (Fieldtrip uses seconds so in that case you need to converse)
+% cfg.srate = EEG.srate; 
+% cfg.eegtime = EEG.times; 
 %
-% -- you can relock data to a response or other event:
-% cfg.relock = 'none'; % 'none' or event code value; can be number if button response; or e.g. 'saccade' in case of simultaneous eye-tracking
+% -- if you relocked data to a response or other event, a stim-locked 
+% -- baseline is still recommended, which requires saved time points of 
+% -- when stimulus was presented at each trial:
+% cfg.relock = baselinepoints; % see README on Github page or email:
+% joramvandriel@gmail.com
 %
 % -- channel info: number of channels to analyze, and which channel label
 % -- to take as seed for connectivity analysis
@@ -32,13 +35,18 @@ function [tf_pow, varargout] = tfdecomp(cfg,eegdat,varargin)
 % cfg.connectivity = 'both'; % 'pli','iscp','both','none'
 % cfg.seeds = {'fcz'}; % leave empty ({}) if no connectivity
 %
+% -- robust regression: fit a regression model with power as Y and e.g. RT
+% -- as X, in Y=a+bX+e; the b-values will be stored for output; this requires
+% -- the regressors (cell array with cell per condition, each cell with
+% -- trial-by-regressors matrix) as a third input argument
+% cfg.robfit = true; 
+%
 % -- frequency, time and baseline info:
 % cfg.frequencies = [2 40 25]; % from min to max in nsteps
 % cfg.cycles = [3 12]; % min max number of cycles used for min max frequency
 % cfg.scale = 'log'; % whether the above frequency settings will be logarithmically (recommended) or linearly scaled
 % cfg.times2save = -200:25:1000;
 % cfg.basetime = [-500 -200];
-% cfg.stimbase = true; % in case of relocking the data, do you want the baseline to be pre-stimulus?
 % cfg.baselinetype = 'conavg'; % 'conavg' or 'conspec'
 % cfg.erpsubract = false; % if true, non-phase-locked (i.e. "induced") power will be computed by subtracting the ERP from each single trial
 % cfg.matchtrialn = true; % if true, conditions will be equated in terms of trial count (so SNR is comparable across conditions)
@@ -101,7 +109,7 @@ end
 ntrials = cellfun(@(x) size(x,3),eegdat);
 nconds = length(eegdat);
 
-%% loop through files
+%% start
 
 outputfilename = [writdir filename];
 disp(outputfilename)
@@ -150,7 +158,7 @@ if basetime
     
     [~,basetimeidx(1)] = min(abs(eegtime-basetime(1)));
     [~,basetimeidx(2)] = min(abs(eegtime-basetime(2)));
-    [~,minbase] = min(abs(eegtime-(eegtime(1)+1500)));
+    [~,minbase] = min(abs(eegtime-(eegtime(1)+trialpad)));
     
     if relock % relocking option requires a 'startpoint' vector point to the point in time that initially was time 0
         for condi=1:nconds
@@ -343,16 +351,30 @@ dim.cfg_prev = cfg;
 
 % specifiy output arguments
 if connectivity & ~robfit
-    varargout{1} = tf_sync;
-    varargout{2} = dim;
+    if basetime
+        varargout{1} = tf_phase;
+        varargout{2} = tf_sync;
+        varargout{3} = dim;
+    else
+        tf_pow = tf_sync;
+        varargout{1} = dim;
+    end
 elseif connectivity & robfit
-    varargout{1} = tf_sync;
-    varargout{2} = tf_rvals;
-    varargout{3} = dim;
+    if basetime
+        varargout{1} = tf_phase;
+        varargout{2} = tf_sync;
+        varargout{3} = tf_rvals;
+        varargout{4} = dim;
+    else
+        tf_pow = tf_rvals;
+        varargout{1} = tf_sync;
+        varargout{2} = dim;
+    end
 elseif robfit & ~connectivity
     if basetime
-        varargout{1} = tf_rvals;
-        varargout{2} = dim;
+        varargout{1} = tf_phase;
+        varargout{2} = tf_rvals;
+        varargout{3} = dim;
     else
         tf_pow = tf_rvals;
         varargout{1} = dim;

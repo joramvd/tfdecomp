@@ -1,5 +1,7 @@
 This repository contains Matlab code for decomposing raw EEG data into time-frequency resolved data.
 
+Input is a cfg structure with ingredients, and a eegdat cell array of n conditions, each with a channel-time-trial matrix.
+
 The backbone of this analysis is wavelet decomposition. FFT is applied on both the raw data, as well as wavelets of several frequencies, and multiplication is done in the frequency domain, after which the inverse FFT is taken.
 This gives both power and phase estimates of frequency-specific activity over time.
 
@@ -7,10 +9,12 @@ With phase, the option exists to also do seeded connectivity analysis, or all-to
 For connectivity, two metrics are implemented: inter-site phase clustering (or 'phase-locking value') and debiased weighted phase-lag index.
 There is also an option to subtract the ERP from the single trial raw data, so you get “induced” (so total minus “evoked”) power.
 
-In the Matlab code, the raw EEG data needs to be in eeglab format. However, any format can be easily converted to eeglab format. For example, if you have Fieldtrip data resulting from ft_timelockanalysis or tf_preprocessing, there are simple conversion functions (fieldtrip2eeglab).
+One new feature is robust regression (using Matlab’s robustfit), this requires a third input containing the regressors (X). Each time-frequency-channel raw power value will be Y in Y = a + bX1 + … + bXn + e, where the b-values for each time-frequency-channel point and each regressor are saved as regression weights. Regressors could be, for example, reaction time at each trial, or some continuous stimulus dimension. Robust regression does not require baseline correction. 
 
 The Matlab package contains two scripts:
-In run_tfdecomp.m you need to set up a configuration structure that is passed on to tfdata = tfdecomp(cfg)
+In run_tfdecomp.m you need to set up a configuration structure that is passed on to tfdata = tfdecomp(cfg,eegdat)
+
+You need to manually loop over participants
 For basic power, phase and connectivity estimates for an eeglab structure with multiple experimental conditions, and several of those structures for a group of subjects, with stim-locked data (you can also relock the data to, e.g., the response using this function), there is probably no need to change the tfdecomp.m code. Just specify your ingredients in the run_tfdecomp.m script by filling in the cfg.
 Type in help tfdecomp to see what is needed in the cfg.
 
