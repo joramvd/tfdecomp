@@ -5,10 +5,39 @@ function [tf_pow, varargout] = tfdecomp(cfg,eegdat,varargin)
 %
 % This function as it currently stands, needs a cell array with one cell
 % per experimental condition, and each cell containing a channel-time-trial
-% matrix of raw EEG data
+% matrix of raw EEG data; this needs to be the second input argument.
 %
-% First input is a cfg structure (analogous to Fieldtrip functionality),
-% with the following:
+% First input argument is a cfg structure (analogous to Fieldtrip functionality),
+% with analysis-specific ingredients (see below).
+% 
+% Output arguments can be specified as follows (and largely depend on the
+% cfg):
+%
+% - Power only:
+% [tfpow,dim] = tfdecomp(cfg,eegdat);
+% tfpow: 4D matrix of condition-channel-freq-time
+% dim: structure containing time,freq,channel info for plotting
+% 
+% - Power and phase:
+% [tfpow,tfphase,dim] = tfdecomp(cfg,eegdat);
+% tfphase: similar to tfpow
+%
+% - Power and connectivity:
+% [tfpow,tfphase,tfsync,dim] = tfdecomp(cfg,eegdat);
+% tfsync: 5D[/6D] matrix of condition-seed-channel,freq,time[,metric], with
+% metric being ISPC and/or dwPLI 
+% 
+% - Connectivity only:
+% [tfsync,dim] = tfdecomp(cfg,eegdat);
+% 
+% - Power and regression weights:
+% [tfpow,tfphase,tfbvals,dim] = tfdecomp(cfg,eegdat,regressors);
+% tfbvals: 5D matrix of condition-channel-freq-time-regressors 
+%
+% - Regression weights and connectivity (no power):
+% [tfbvals,tfsync,dim] = tfdecomp(cfg,eegdat,regressors);
+% 
+% The cfg should contain:
 %
 % -- Path/filenames for saving:
 % cfg.writdir = 'path/to/folder/;
@@ -26,8 +55,8 @@ function [tf_pow, varargout] = tfdecomp(cfg,eegdat,varargin)
 % -- if you relocked data to a response or other event, a stim-locked 
 % -- baseline is still recommended, which requires saved time points of 
 % -- when stimulus was presented at each trial:
-% cfg.relock = baselinepoints; % see README on Github page or email:
-% joramvandriel@gmail.com
+% cfg.relock = baselinepoints; % see example run_tfdecomp.m on Github page,
+% or email me: joramvandriel@gmail.com
 %
 % -- channel info: number of channels to analyze, and which channel label
 % -- to take as seed for connectivity analysis
@@ -158,9 +187,9 @@ if basetime
     
     [~,basetimeidx(1)] = min(abs(eegtime-basetime(1)));
     [~,basetimeidx(2)] = min(abs(eegtime-basetime(2)));
-    [~,minbase] = min(abs(eegtime-(eegtime(1)+trialpad)));
     
     if relock % relocking option requires a 'startpoint' vector point to the point in time that initially was time 0
+        [~,minbase] = min(abs(eegtime-(eegtime(1)+trialpad)));
         for condi=1:nconds
             nobasetrial = zeros(1,ntrials(condi));
             for ei=1:ntrials(condi)

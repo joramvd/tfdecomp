@@ -1,20 +1,12 @@
-function [rejtrials] = tfreject(cfg,varargin)
+function [rejtrials] = tfreject(cfg,eegdat)
 
 %% unpack cfg and setup settings
 
 v2struct(cfg)
 
-path_list_cell = regexp(path,pathsep,'Split');
-if (exist(eeglab_path,'dir') == 7) && ~any(ismember(eeglab_path,path_list_cell))
-    % addpath(genpath(eeglab_path),'-begin');
-    addpath(genpath(eeglab_path));
-end
-
-% if not specified, set fields to false
-fields2check = {'plot_output','report_progress','overwrite'};
+fields2check = {'basetime','singletrial','erpsubtract','matchtrialn','connectivity','report_progress','overwrite','robfit'};
 for fieldi = 1:length(fields2check)
-    if isfield(cfg,fields2check(fieldi))
-        eval([fields2check{fieldi} ' = ' fields2check{fieldi} ';']);
+    if isfield(cfg,fields2check(fieldi)) 
         if strcmp(eval(fields2check{fieldi}),'none')
             eval([fields2check{fieldi} ' = false;']);
         end
@@ -23,16 +15,17 @@ for fieldi = 1:length(fields2check)
     end
 end
 
-% files to use in analysis
-if isempty(varargin{1})
-    filz = dir([ readdir filesep filename ]);
-    if isempty(filz)
-        error('No files to be loaded...!')
-    end
-else
-    EEG = varargin{1}; % this implies the second argument of tfdecomp, if specified, is an ALLEEG structure
-    filz=1;
+% check output dir
+if ~exist(writdir,'dir')
+    mkdir(writdir)
 end
+if strcmp(writdir(end),filesep)==0
+    writdir = [writdir filesep];
+end
+disp(writdir)
+
+outputfilename = [writdir filename];
+disp(outputfilename)
 
 % frequencies
 if strcmp(scale,'log')
@@ -40,65 +33,92 @@ if strcmp(scale,'log')
 elseif strcmp(scale,'lin')
     frex=linspace(frequencies(1),frequencies(2),frequencies(3));
 end
-num_freqs = frequencies(3);
+nfreqs = frequencies(3);
 
 % gaussian width and time
-npoints = srate*sum(abs(epochtime));
-s=logspace(log10(cycles(1)),log10(cycles(2)),num_freqs)./(2*pi.*frex);
-t=-npoints/srate/2:1/srate:npoints/srate/2-1/srate;
+ntimepoints = size(eegdat{1},2);
+s=logspace(log10(cycles(1)),log10(cycles(2)),nfreqs)./(2*pi.*frex);
+t=-ntimepoints/srate/2:1/srate:ntimepoints/srate/2-1/srate;
 
-wavelets = zeros(num_freqs,length(t));
-for fi=1:num_freqs
+wavelets = zeros(nfreqs,length(t));
+for fi=1:nfreqs
     wavelets(fi,:)=exp(2*1i*pi*frex(fi).*t).*exp(-t.^2./(2*s(fi)^2));
 end
+
+ntrials = cellfun(@(x) size(x,3),eegdat);
+nconds = length(eegdat);
 
 % setup time indexing
 times2saveidx = zeros(size(times2save));
 for ti=1:length(times2save)
-    [~,times2saveidx(ti)]=min(abs(EEG.times-times2save(ti)));
+    [~,times2saveidx(ti)]=min(abs(eegtime-times2save(ti)));
 end
 
-rawconv = zeros(length(channels),num_freqs,length(times2save),EEG.trials);
-Lconv = pow2(nextpow2( npoints*EEG.trials + npoints-1 ));
-
-%% decompose
+%% Now decompose
 reverseStr='';
-% loop around channels
-for chani=channels
+
+% loop around conditions
+for condi=1:nconds
     
+    Lconv = pow2(nextpow2( ntimepoints*ntrials(condi) + ntimepoints-1 ));
+    rawconv = zeros(length(channels),nfreqs,length(times2save),ntrials(condi));
+    
+    % loop around channels
+    for chani=channels
+        
+        if report_progress
+            % display progress
+            msg = sprintf('Decomposing channel %i/%i of experimental condition %i/%i...',  chani,length(channels),condi,nconds);
+            fprintf([reverseStr, msg]);
+            reverseStr = repmat(sprintf('\b'), 1, length(msg));
+        end
+        
+        try
+            EEGfft = fft(reshape(eegdat{condi}(chani,:,:),1,ntimepoints*ntrials(condi)),Lconv);
+        catch me
+            warning('More channels specified than present in data, rest is set to zero')
+            continue
+        end
+        
+        % loop around frequencies
+        for fi=1:nfreqs
+            
+            % convolve and get analytic signal
+            m = ifft(EEGfft.*fft(wavelets(fi,:),Lconv),Lconv);
+            m = m(1:(ntimepoints*ntrials(condi) + ntimepoints-1));
+            m = reshape(m(floor((ntimepoints-1)/2):end-1-ceil((ntimepoints-1)/2)),ntimepoints,ntrials(condi));
+            
+            % populate
+            rawconv(chani,fi,:,:) = m(times2saveidx,:);
+            
+        end % end frequency loop
+    end % end channel loop
     if report_progress
-        % display progress
-        msg = sprintf('Decomposing channel %i/%i...',  chani,length(channels));
-        fprintf([reverseStr, msg]);
-        reverseStr = repmat(sprintf('\b'), 1, length(msg));
+        fprintf('done.\n')
+        reverseStr='';
     end
     
-    try
-        EEGfft = fft(reshape(EEG.data(chani,:,:),1,npoints*EEG.trials),Lconv);
-    catch me
-        warning('More channels specified than present in data, rest is set to zero')
-        continue
-    end
+    % additional trial rejection procedure for power outlier trials
+    % note: because we just average over all frequencies, timepoints and
+    % channels, low-frequency will dominate due to 1/f; but this is in fact
+    % what we want: high-frequency noise was already removed during
+    % preprocessing (muscle artifacts); this step is meant to reject some
+    % trials in which one channel showed e.g. a weird 'blip'; this is
+    % likely reflected in all frequency bands
+    % I tried some baseline-correction or other normalization procedures,
+    % but the simple raw power exactly identifies the trials that can have
+    % a dramatic impact on further analyses.
     
-    % loop around frequencies
-    for fi=1:num_freqs
-        
-        % convolve and get analytic signal
-        m = ifft(EEGfft.*fft(wavelets(fi,:),Lconv),Lconv);
-        m = m(1:(npoints*EEG.trials + npoints-1));
-        m = reshape(m(floor((npoints-1)/2):end-1-ceil((npoints-1)/2)),npoints,EEG.trials);
-        
-        % populate
-        rawconv(chani,fi,:,:) = m(times2saveidx,:);
-        
-    end % end frequency loop
-end % end channel loop
+    rawpow = squeeze(mean( reshape(abs(rawconv).^2,length(channels)*nfreqs*length(times2save),ntrials(condi)), 1));
+    rejtrials=(rawpow>median(rawpow)+ndev*std(rawpow));
+
+    fprintf('Removed an additional %i trials.\n', length(rejtrials));
+    
+    save(outputfilename,'rejtrials');
+
+end % end condition loop
 
 %%
-% additional trial rejection procedure for power outlier trials
-rawpow = squeeze(mean( reshape((abs(rawconv).^2),length(channels)*num_freqs*length(times2save),EEG.trials), 1));
-rejtrials=find(rawpow>median(rawpow)+3*std(rawpow));
-fprintf('Removed an additional %i trials.\n', length(rejtrials));
 
 
 end

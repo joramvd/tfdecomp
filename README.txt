@@ -1,4 +1,4 @@
-This repository contains Matlab code for decomposing raw EEG data into time-frequency resolved data.
+This repository contains Matlab code for decomposing raw EEG data into time-frequency power and/or other metrics like inter-trial and inter-site phase clustering.
 
 Input is a cfg structure with ingredients, and a eegdat cell array of n conditions, each with a channel-time-trial matrix.
 
@@ -9,18 +9,24 @@ With phase, the option exists to also do seeded connectivity analysis, or all-to
 For connectivity, two metrics are implemented: inter-site phase clustering (or 'phase-locking value') and debiased weighted phase-lag index.
 There is also an option to subtract the ERP from the single trial raw data, so you get “induced” (so total minus “evoked”) power.
 
-One new feature is robust regression (using Matlab’s robustfit), this requires a third input containing the regressors (X). Each time-frequency-channel raw power value will be Y in Y = a + bX1 + … + bXn + e, where the b-values for each time-frequency-channel point and each regressor are saved as regression weights. Regressors could be, for example, reaction time at each trial, or some continuous stimulus dimension. Robust regression does not require baseline correction. 
+One new feature is robust regression (using Matlab’s robustfit), this requires a third input containing the regressors (X). Each time-frequency-channel raw power value will be Y in Y = a + bX1 + … + bXn + e, where the b-values for each time-frequency-channel point and each regressor are saved as regression weights. Regressors could be, for example, reaction time at each trial, or some continuous stimulus dimension. Robust regression does not require baseline correction.
 
-The Matlab package contains two scripts:
-In run_tfdecomp.m you need to set up a configuration structure that is passed on to tfdata = tfdecomp(cfg,eegdat)
+You can also save single-trial power, e.g. if you want to export these data to more sophisticated machine-learning packages like sklearn (Python).
 
-You need to manually loop over participants
-For basic power, phase and connectivity estimates for an eeglab structure with multiple experimental conditions, and several of those structures for a group of subjects, with stim-locked data (you can also relock the data to, e.g., the response using this function), there is probably no need to change the tfdecomp.m code. Just specify your ingredients in the run_tfdecomp.m script by filling in the cfg.
-Type in help tfdecomp to see what is needed in the cfg.
+The Matlab package contains an example script that calls the tfdecomp function:
+In run_tfdecomp.m you need to load the EEG data of one participant. Depending on your experiment and question, you divide the data up in conditions, and put them into separate cells of a variable (say, “eegdat”). Then set up a configuration structure that is passed on to tfdata = tfdecomp(cfg,eegdat).
 
-tfdecomp also has the option to produce single-subject plots, for data quality checks.
-The package also contains a separate plotting function tfmultiplot, which requires the output of tfdecomp as input, together with a cfg that contains the specification of what you want to plot. It will produce several subplots including a time-frequency map of a requested (group of) electrode(s), a topographical map of a requested time-frequency window, and line plots that visualize frequency-specific time courses for one or multiple experimental conditions.
+This package contains four other functions:
 
-Currently it only accepts single-subject (or an average over a group of subjects) data. Group-level analysis plotting, including cluster-based permutation testing, is work in progress.
+- tfreject: sometimes single-trial power outliers can have a huge impact on the group-average results; these are usually caused by artifacts that were not detected during preprocessing. This function does a quick tf-decomposition and detects trials with outliers. I recommend to inspect the result of this detection in the raw data using EEGLAB.
+
+- tfclustperm_tf: cluster-based permutation testing over time and frequency; a statistical test of a (difference) score against zero, correcting for multiple comparison. Channels are pre-selected.
+
+- tfclustperm_chan: cluster-based permutation testing over space; time-frequency window or cluster is pre-selected. This function requires a neighbor structure offered by Fieldtrip, to go over candidate clusters in the data depending on the channel layout.
+
+- tfmultiplot: plotting function at the group level (you need to average over participants beforehand), giving you in one glance: a time-frequency plot of a selection of channels (averaged over channels or subtracting channels), a topographical map of a time-frequency window, and a line plot of frequency-specific power. For a condition-contrast, the difference score is plotted in the time-frequency map, and the lines of the separate conditions are plotted in the line plot.
+
+
+Future commits will include run_* example scripts of the above functions, with a 5-subject example dataset.
 
 For questions please e-mail me: joramvandriel@gmail.com
