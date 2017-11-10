@@ -10,6 +10,9 @@
 %
 % Currently this function only works for single-subject or group-averaged
 % data
+% You should carefully check if the dimensions of the input data match
+% the requested metic to be plotted; look out for singleton-dimensions,
+% as there is some squeezing done in the function.
 
 %% Example of condition-average power plot
 %  also gives you line plot of condition-specific power
@@ -25,7 +28,7 @@ cfg.connames = {'condition A'};
 cfg.concomp = [2; 1];
 cfg.markevents = [0 500];
 
-tfmultiplot(cfg,plotdat(2:3,:,:,:),dim);
+tfmultiplot(cfg,tf_pow,dim);
 
 %% Example of condition-comparison connectivity plot
 %  for data with four conditions, we here compare the average of condition
@@ -34,16 +37,16 @@ tfmultiplot(cfg,plotdat(2:3,:,:,:),dim);
 cfg = [];
 
 cfg.metric = 'pli';
-cfg.seed = {'fcz'};
-cfg.chan = {'p1','p2','pz'};
-cfg.freq = [8 14];
-cfg.time = [100 1000];
+cfg.seed = {'fcz','fc1','fc2','fz'};
+cfg.chan = {'p1','p2','pz','poz','po7','po8'};
+cfg.freq = [2 7];
+cfg.time = [50 400];
 cfg.scale = 'log';
 cfg.connames = {'condition A'};
 % cfg.concomp = [1 2; 3 4];
-cfg.markevents = [0 500 1500];
+cfg.markevents = [0];
 
-tfmultiplot(cfg,tf_sync,dim);
+tfmultiplot(cfg,squeeze(tf_sync(:,:,:,:,:,1)),dim);
 
 %% Example of condition average power, comparing groups of channels
 %  useful for e.g. lateralization analysis

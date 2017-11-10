@@ -151,8 +151,9 @@ end
 
 %% optional regressor extraction for robustfit
 
-if robfit
+if robfit || strcmp(connectivity,'wispc')
     regressors = varargin{1};
+    nreg = size(regressors{1},2);
 end
 
 %% optional matching of conditions in trial count
@@ -166,7 +167,7 @@ if matchtrialn
             if relock
                 startpoint{condi} = startpoint{condi}(sort(trialsel(1:nmin)));
             end
-            if robfit
+            if robfit || strcmp(connectivity,'wispc')
                 regressors{condi} = regressors{condi}(sort(trialsel(1:nmin)),:);
             end
             ntrials(condi)=nmin;
@@ -183,7 +184,7 @@ for ti=1:length(times2save)
 end
 
 % baseline time indices
-if basetime
+if sum(basetime)
     
     [~,basetimeidx(1)] = min(abs(eegtime-basetime(1)));
     [~,basetimeidx(2)] = min(abs(eegtime-basetime(2)));
@@ -223,6 +224,8 @@ if  strcmp(connectivity,'both')
     tf_sync  = zeros(nconds,length(seeds),length(channels),nfreqs,length(times2saveidx),2);
 elseif strcmp(connectivity,'pli') || strcmp(connectivity,'ispc')
     tf_sync  = zeros(nconds,length(seeds),length(channels),nfreqs,length(times2saveidx));
+elseif strcmp(connectivity,'wispc')
+    tf_sync  = zeros(nconds,length(seeds),length(channels),nfreqs,length(times2saveidx),nreg);
 else
     tf_sync = NaN;
 end
@@ -232,6 +235,10 @@ reverseStr='';
 
 % loop around conditions
 for condi=1:nconds
+    
+    if strcmp(connectivity,'wispc')
+        regreshaped = permute(repmat(regressors{condi},[1 1 length(frex) length(times2saveidx)]),[2 3 4 1]);
+    end
     
     Lconv = pow2(nextpow2( ntimepoints*ntrials(condi) + ntimepoints-1 ));
     rawconv = zeros(length(channels),nfreqs,length(times2save),ntrials(condi));
@@ -265,7 +272,7 @@ for condi=1:nconds
             rawconv(chani,fi,:,:) = m(times2saveidx,:);
             
             % baseline power
-            if basetime
+            if sum(basetime)
                 if relock
                     for ei=1:size(m,2)
                         basetimeshift = basetimeidx - startpoint{condi}(ei) + 1;
@@ -327,6 +334,27 @@ for condi=1:nconds
                     tmppli = (imagsum.^2 - debiasfactor)./(imagsumW.^2 - debiasfactor);
                 end
                 
+                if strcmp(connectivity,'wispc')
+                    
+                    realispc = zeros(length(frex),length(times2save),nreg);
+                    for regi = 1:nreg
+                        realispc(:,:,regi) = abs(mean( squeeze(regreshaped(regi,:,:,:)) .* exp(1i*angle(csdm)),3));
+                    end
+                    
+                    % permutation testing
+                    if ~isfield(cfg,'nperm')
+                        nperm=500;
+                    end
+                    fakeispc = zeros(nperm,length(frex),length(times2save),nreg);
+                    
+                    for permi=1:nperm
+                        for regi=1:nreg
+                            fakeispc(permi,:,:,regi) = abs(mean( squeeze(regreshaped(regi,:,:,randperm(ntrials(condi)))) .* exp(1i*angle(csdm)),3));
+                        end
+                    end
+                end
+                
+                
                 if strcmp(connectivity,'ispc')
                     tf_sync(condi,chanx,chany,:,:) = tmpsync;
                 elseif strcmp(connectivity,'pli')
@@ -334,6 +362,8 @@ for condi=1:nconds
                 elseif strcmp(connectivity,'both')
                     tf_sync(condi,chanx,chany,:,:,1) = tmpsync;
                     tf_sync(condi,chanx,chany,:,:,2) = tmppli;
+                elseif strcmp(connectivity,'wispc')
+                    tf_sync(condi,chanx,chany,:,:,:) = (realispc - squeeze(mean(fakeispc))) ./ squeeze(std(fakeispc));
                 end
                 
             end % chany
@@ -347,7 +377,7 @@ for condi=1:nconds
     % single trial power
     if singletrial
         tf_pow{condi} = abs(rawconv).^2;
-    elseif basetime
+    elseif sum(basetime)
         tf_pow(condi,:,:,:)   = mean(abs(rawconv).^2,4); % raw power; baseline correction is done after the condition loop
         tf_phase(condi,:,:,:) = abs(mean(exp(1i*angle(rawconv)),4));
     end
@@ -355,7 +385,7 @@ for condi=1:nconds
 end % end condition loop
 
 %% db convert: condition-specific baseline
-if basetime
+if sum(basetime)
     if strcmp(baselinetype,'conspec')
         tf_pow = 10*log10( tf_pow ./ repmat(baselinedata,[ 1 1 1 length(times2save) ]) );
     elseif strcmp(baselinetype,'conavg')
@@ -380,7 +410,7 @@ dim.cfg_prev = cfg;
 
 % specifiy output arguments
 if connectivity & ~robfit
-    if basetime
+    if sum(basetime)
         varargout{1} = tf_phase;
         varargout{2} = tf_sync;
         varargout{3} = dim;
@@ -389,7 +419,7 @@ if connectivity & ~robfit
         varargout{1} = dim;
     end
 elseif connectivity & robfit
-    if basetime
+    if sum(basetime)
         varargout{1} = tf_phase;
         varargout{2} = tf_sync;
         varargout{3} = tf_rvals;
@@ -400,7 +430,7 @@ elseif connectivity & robfit
         varargout{2} = dim;
     end
 elseif robfit & ~connectivity
-    if basetime
+    if sum(basetime)
         varargout{1} = tf_phase;
         varargout{2} = tf_rvals;
         varargout{3} = dim;
@@ -416,7 +446,7 @@ end
 %% save results
 if save_output
     if connectivity
-        if basetime
+        if sum(basetime)
             save(outputfilename,'tf_pow','tf_phase','tf_sync','dim');
         else
             save(outputfilename,'tf_sync','dim');
@@ -424,7 +454,7 @@ if save_output
     elseif singletrial
         save(outputfilename,'tf_pow','dim');
     elseif robfit
-        if basetime
+        if sum(basetime)
             save(outputfilename,'tf_rvals','tf_pow','tf_phase','dim');
         else
             save(outputfilename,'tf_rvals','dim');
