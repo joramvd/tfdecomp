@@ -127,7 +127,11 @@ nfreqs = frequencies(3);
 
 % gaussian width and time
 ntimepoints = size(eegdat{1},2);
-s=logspace(log10(cycles(1)),log10(cycles(2)),nfreqs)./(2*pi.*frex);
+if strcmp(scale,'log')
+    s=logspace(log10(cycles(1)),log10(cycles(2)),nfreqs)./(2*pi.*frex);
+elseif strcmp(scale,'lin')
+    s=linspace(cycles(1),cycles(2),nfreqs)./(2*pi.*frex);
+end
 t=-ntimepoints/srate/2:1/srate:ntimepoints/srate/2-1/srate;
 
 wavelets = zeros(nfreqs,length(t));

@@ -23,6 +23,9 @@ end
 if ~isfield(cfg,'avgoverfreq')
     avgoverfreq = 'no';
 end
+% if isfield(cfg,'mask')
+%     chan = mask.cfg_prev.chan;
+% end
 ntests = 1;
 
 % select channels
@@ -72,13 +75,19 @@ end
 tftime = dim.times(toi);
 tffrex = dim.freqs(foi);
 
-X = X(:,foi,toi);
+X  = X(:,foi,toi);
+X1 = X1(:,foi,toi);
+if ~isempty(varargin)
+    X2 = X2(:,foi,toi);
+end
 
 % if requested, average over frequency domain to do time-domain test
 if strcmp(avgoverfreq,'yes');
     X = mean(X,2);
     X1 = mean(X1,2);
-    X2 = mean(X2,2);
+    if ~isempty(varargin)
+        X2 = mean(X2,2);
+    end
 elseif isfield(cfg,'mask')
     fprintf('Averaging over frequency based on statistical mask...\n')
     avgoverfreq = 'yes';
@@ -116,9 +125,7 @@ for testi=1:ntests
     nSubjects = size(tfdata,1);
     voxel_pval   = pval;
     cluster_pval = pval;
-    
-    %% cluster test based on z-values through permutation testing
-    
+
     % initialize null hypothesis matrices
     max_clust_info   = zeros(nperm,1);
     
@@ -211,27 +218,18 @@ for testi=1:ntests
         clust_pvals(cp) = length(find(max_clust_info>clust_info(cp)))/nperm;
         clust_act(cp) = sum(tmapthresh(clustinfo.PixelIdxList{cp}));
     end
-    %end
     
     % remove clusters
     for i=1:length(whichclusters2remove)
         tmapthresh(clustinfo.PixelIdxList{whichclusters2remove(i)})=0;
     end
     
-    
     %% Generate figure: time-freq
     
     if strcmp(plot_output,'yes') && strcmp(avgoverfreq,'no');
         figure
-        subplot(221)
-        contourf(tftime,tffrex,realmean,40,'linecolor','none')
-        cmax=max(abs(get(gca,'clim')));
-        axis square
-        set(gca,'clim',[-cmax cmax],'yscale','log','ytick',[round(logspace(log10(min(tffrex)),log10(max(tffrex)),5))] )
-        title('power map')
-        xlabel('Time (ms)'), ylabel('Frequency (Hz)')
         
-        subplot(222)
+        subplot(221)
         contourf(tftime,tffrex,squeeze(tmap),40,'linecolor','none')
         cmax=max(abs(get(gca,'clim')));
         axis square
@@ -239,10 +237,19 @@ for testi=1:ntests
         title('unthresholded t-map')
         xlabel('Time (ms)'), ylabel('Frequency (Hz)')
         
+        subplot(222)
+        topoplot(zeros(1,length(dim.chans)),dim.chans,'electrodes','off','emarker2',{chan2test,'o','k',5,1},'whitebk','on')
+        if isfield(cfg,'chandiff')
+            hold on
+            topoplot(zeros(1,length(dim.chans)),dim.chans,'electrodes','off','emarker2',{chan2test2,'o','r',5,1},'whitebk','on')
+        end
+        
         subplot(223)
-        contourf(tftime,tffrex,threshmean,40,'linecolor','none')
+        contourf(tftime,tffrex,realmean,40,'linecolor','none')
         cmax=max(abs(get(gca,'clim')));
         axis square
+        hold on
+        contour(tftime,tffrex,abs(threshmean)>0,1,'k');
         set(gca,'clim',[-cmax cmax],'yscale','log','ytick',[round(logspace(log10(min(tffrex)),log10(max(tffrex)),5))] )
         title('Uncorrected power map')
         xlabel('Time (ms)'), ylabel('Frequency (Hz)')
@@ -255,6 +262,7 @@ for testi=1:ntests
         title('Cluster-corrected t-map')
         xlabel('Time (ms)'), ylabel('Frequency (Hz)')
     end
+    
     %% Generate figure: time
     
     if strcmp(plot_output,'yes') && strcmp(avgoverfreq,'yes');
@@ -262,11 +270,18 @@ for testi=1:ntests
         
         if ~isempty(varargin)
             
-            subplot(121)
-            [l,p] = boundedline(dim.times,squeeze(mean(X1)),squeeze(std(X1))./sqrt(nSubjects),'b','alpha','transparency',.1);
+            subplot(221)
+            topoplot(zeros(1,length(dim.chans)),dim.chans,'electrodes','off','emarker2',{chan2test,'o','k',5,1},'whitebk','on')
+            if isfield(cfg,'chandiff')
+                hold on
+                topoplot(zeros(1,length(dim.chans)),dim.chans,'electrodes','off','emarker2',{chan2test2,'o','r',5,1},'whitebk','on')
+            end
+            
+            subplot(223)
+            [l,p] = boundedline(tftime,squeeze(mean(X1)),squeeze(std(X1))./sqrt(nSubjects),'b','alpha','transparency',.1);
             outlinebounds(l,p);
             h(1)=l;
-            [l,p] = boundedline(dim.times,squeeze(mean(X2)),squeeze(std(X1))./sqrt(nSubjects),'r','alpha','transparency',.1);
+            [l,p] = boundedline(tftime,squeeze(mean(X2)),squeeze(std(X1))./sqrt(nSubjects),'r','alpha','transparency',.1);
             outlinebounds(l,p);
             h(2)=l;
             legend(h,'conA','conB');
@@ -282,8 +297,8 @@ for testi=1:ntests
                 plot([tftime(plotclust.PixelIdxList{blob}(1)) tftime(plotclust.PixelIdxList{blob}(end))],[min(yl)+sum(abs(yl))/20 min(yl)+sum(abs(yl))/20],'color',[.5 .5 .5],'linewidth',4);
             end
             
-            subplot(122)
-            [l,p] = boundedline(dim.times,squeeze(mean(X)),squeeze(std(X))./sqrt(nSubjects),'k','alpha','transparency',.1);
+            subplot(224)
+            [l,p] = boundedline(tftime,squeeze(mean(X)), squeeze(std(X)) ./sqrt(nSubjects),'b','alpha','transparency',.1);
             outlinebounds(l,p);
             axis square
             title('Difference')
@@ -295,16 +310,26 @@ for testi=1:ntests
                 plot([tftime(plotclust.PixelIdxList{blob}(1)) tftime(plotclust.PixelIdxList{blob}(end))],[min(yl)+sum(abs(yl))/20 min(yl)+sum(abs(yl))/20],'k','linewidth',4);
             end
         else
-            [l,p] = boundedline(dim.times,squeeze(mean(X)),squeeze(std(X))./sqrt(nSubjects),'k','alpha','transparency',.1);
+            
+            subplot(121)
+            topoplot(zeros(1,length(dim.chans)),dim.chans,'electrodes','off','emarker2',{chan2test,'o','k',5,1},'whitebk','on')
+            if isfield(cfg,'chandiff')
+                hold on
+                topoplot(zeros(1,length(dim.chans)),dim.chans,'electrodes','off','emarker2',{chan2test2,'o','r',5,1},'whitebk','on')
+            end
+            
+            subplot(122)
+            [l,p] = boundedline(tftime,squeeze(mean(X)),squeeze(std(X))./sqrt(nSubjects),'k','alpha','transparency',.1);
             outlinebounds(l,p);
             axis square
             title('Single condition')
             xlabel('Time (ms)'), ylabel('T-val')
-            
+            yl=get(gca,'ylim');
+
             hold on
             plotclust = bwconncomp(threshmean,conn);
             for blob=1:plotclust.NumObjects;
-                plot([tftime(plotclust.PixelIdxList{blob}(1)) tftime(plotclust.PixelIdxList{blob}(end))],[min(yl)+sum(abs(yl))/10 min(yl)+sum(abs(yl))/20],[.5 .5 .5],'linewidth',4);
+                plot([tftime(plotclust.PixelIdxList{blob}(1)) tftime(plotclust.PixelIdxList{blob}(end))],[min(yl)+sum(abs(yl))/10 min(yl)+sum(abs(yl))/10],'color',[.5 .5 .5],'linewidth',4);
             end
             hold on
             plotclust = bwconncomp(tmapthresh,conn);

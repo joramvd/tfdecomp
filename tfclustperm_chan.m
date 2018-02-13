@@ -19,11 +19,11 @@ if isfield(cfg,'mask');
     % and data
     if sum(ismember(dim.times,mask.time))<length(dim.times)
         
-        dim.times = dim.times(ismember(dim.times,mask.time));
         tfdat = tfdat(:,:,:,ismember(dim.times,mask.time));
-        
-        mask.time = mask.time(ismember(mask.time,dim.times));
         mask.tmapthresh = mask.tmapthresh(:,ismember(mask.time,dim.times));
+        
+        dim.times = dim.times(ismember(dim.times,mask.time));        
+        mask.time = mask.time(ismember(mask.time,dim.times));
     end
     
     clusts = bwconncomp(mask.tmapthresh);
@@ -69,9 +69,10 @@ for maski = 1:nmasks
         X = squeeze(mean(mean(tfdat(:,:,foi,toi),3),4));
     end
     
-    [~,~,~,tmp] = ttest(X);
+    [~,pvalst,~,tmp] = ttest(X);
     tmap = squeeze(tmp.tstat);
     realmean = squeeze(mean(X));
+    [p_fdr, p_masked] = fdr( pvalst, pval);
     
     % uncorrected pixel-level threshold
     threshmean = realmean;
@@ -316,7 +317,16 @@ for maski = 1:nmasks
             labs2plot_idx(chani) = find(strcmpi({dim.chans.labels},labs2plot(chani)));
         end
         figure
+        subplot(221)
+        title('thresholded t-map')
+        topoplot(tmapthresh,dim.chans,'electrodes','on','whitebk','on');
+        subplot(222)
+        title('t-map FDR')
+        topoplot(tmap,dim.chans,'electrodes','off','emarker2',{find(p_masked),'o','w',5,1},'whitebk','on');
+        subplot(223)
+        title('t-map cluster-corrected')
         topoplot(tmap,dim.chans,'electrodes','off','emarker2',{labs2plot_idx,'o','w',5,1},'whitebk','on');
+        
     end
     if isfield(cfg,'cmap')
         if ischar(cmap)
