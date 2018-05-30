@@ -53,11 +53,12 @@ for maski = 1:nmasks
     
     if isfield(cfg,'mask')
         fprintf('Performing %i permutations of win/clust %i:\n',nperm,nmasks);
-        if isfield(mask.cfg_prev,'mask')
+        if isfield(mask.cfg_prev,'mask') || strcmp(mask.cfg_prev.avgoverfreq,'yes')
             % if we use a statistical mask for averaging over time/freq, we
             % need to check whether that mask was a result of another
             % statistical mask, which resulted in averaging over one
             % frequency band, so our cluster will only be in time, not freq
+            % same holds for a mask of a statistical test over time
             tfdat_reshaped = reshape(squeeze(mean(tfdat(:,:,foi,toi),3)),[nsubjects length(dim.chans(1:64)) length(toi)] );
         else
             tfdat_reshaped = reshape(tfdat(:,:,foi,toi),[nsubjects length(dim.chans(1:64)) length(toi)*length(foi)] );
@@ -293,14 +294,22 @@ for maski = 1:nmasks
     clust_threshold = prctile(permuted_tsum_clusters,100-cluster_pval*100);
     
     %% cluster-size_threshold
-    
+
+    for clusti=1:length(pos_clusters.tval)
+        pos_clusters.pvals(clusti) = length(find(permuted_tsum_clusters>abs(pos_clusters.tval(clusti))))/nperm;
+    end
+    for clusti=1:length(neg_clusters.tval)
+        neg_clusters.pvals(clusti) = length(find(permuted_tsum_clusters>abs(neg_clusters.tval(clusti))))/nperm;
+    end
     clusts2remove = find(abs(pos_clusters.tval)<clust_threshold);
     pos_clusters.tval(clusts2remove)=[];
     pos_clusters.label(clusts2remove)=[];
+    pos_clusters.pvals(clusts2remove)=[];
     
     clusts2remove = find(abs(neg_clusters.tval)<clust_threshold);
     neg_clusters.tval(clusts2remove)=[];
     neg_clusters.label(clusts2remove)=[];
+    neg_clusters.pvals(clusts2remove)=[];
     
     % channel indices of clusters, for plotting
     elecs2plot_lab = [neg_clusters.label{:},pos_clusters.label{:}]; % left electrodes; contralateral to right cues

@@ -449,20 +449,26 @@ end
 
 %% save results
 if save_output
-    if connectivity
+    if robfit && connectivity
+        if sum(basetime)
+            save(outputfilename,'tf_rvals','tf_sync','tf_pow','tf_phase','dim');
+        else
+            save(outputfilename,'tf_rvals','tf_sync','dim');
+        end
+    elseif connectivity
         if sum(basetime)
             save(outputfilename,'tf_pow','tf_phase','tf_sync','dim');
         else
             save(outputfilename,'tf_sync','dim');
         end
-    elseif singletrial
-        save(outputfilename,'tf_pow','dim');
     elseif robfit
         if sum(basetime)
             save(outputfilename,'tf_rvals','tf_pow','tf_phase','dim');
         else
             save(outputfilename,'tf_rvals','dim');
         end
+    elseif singletrial
+        save(outputfilename,'tf_pow','dim');
     else
         save(outputfilename,'tf_pow','tf_phase','dim');
     end
