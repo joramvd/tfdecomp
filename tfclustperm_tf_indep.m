@@ -148,7 +148,6 @@ for testi=1:ntests
         [~,~,~,tmp] = ttest2(X1_perm,X2_perm);
         
         faketmap = squeeze(tmp.tstat);
-        faketmap(abs(faketmap)<tinv(1-voxel_pval/2,sum(nSubjects)-2))=0;
         if ~isfield(cfg,'tail')
             faketmap(abs(faketmap)<tinv(1-voxel_pval/2,sum(nSubjects)-2))=0;
         elseif strcmp(tail,'left')
@@ -248,76 +247,50 @@ for testi=1:ntests
     if strcmp(plot_output,'yes') && strcmp(avgoverfreq,'yes');
         figure
         
-        if ~isempty(varargin)
-            
-            subplot(221)
-            topoplot(zeros(1,length(dim.chans)),dim.chans,'electrodes','off','emarker2',{chan2test,'o','k',5,1},'whitebk','on')
-            if isfield(cfg,'chandiff')
-                hold on
-                topoplot(zeros(1,length(dim.chans)),dim.chans,'electrodes','off','emarker2',{chan2test2,'o','r',5,1},'whitebk','on')
-            end
-            
-            subplot(223)
-            [l,p] = boundedline(tftime,squeeze(mean(X1)),squeeze(std(X1))./sqrt(nSubjects),'b','alpha','transparency',.1);
-            outlinebounds(l,p);
-            h(1)=l;
-            [l,p] = boundedline(tftime,squeeze(mean(X2)),squeeze(std(X1))./sqrt(nSubjects),'r','alpha','transparency',.1);
-            outlinebounds(l,p);
-            h(2)=l;
-            legend(h,'conA','conB');
-            yl=get(gca,'ylim');
-            
-            axis square
-            title('Conditions')
-            xlabel('Time (ms)'), ylabel('Raw activity')
-            
+        subplot(221)
+        topoplot(zeros(1,length(dim.chans)),dim.chans,'electrodes','off','emarker2',{chan2test,'o','k',5,1},'whitebk','on')
+        if isfield(cfg,'chandiff')
             hold on
-            plotclust = bwconncomp(threshmean,conn);
-            for blob=1:plotclust.NumObjects;
-                plot([tftime(plotclust.PixelIdxList{blob}(1)) tftime(plotclust.PixelIdxList{blob}(end))],[min(yl)+sum(abs(yl))/20 min(yl)+sum(abs(yl))/20],'color',[.5 .5 .5],'linewidth',4);
-            end
-            
-            subplot(224)
-            [l,p] = boundedline(tftime,squeeze(mean(X)), squeeze(std(X)) ./sqrt(nSubjects),'b','alpha','transparency',.1);
-            outlinebounds(l,p);
-            axis square
-            title('Difference')
-            xlabel('Time (ms)'), ylabel('T-val')
-            
-            hold on
-            plotclust = bwconncomp(tmapthresh,conn);
-            for blob=1:plotclust.NumObjects;
-                plot([tftime(plotclust.PixelIdxList{blob}(1)) tftime(plotclust.PixelIdxList{blob}(end))],[min(yl)+sum(abs(yl))/20 min(yl)+sum(abs(yl))/20],'k','linewidth',4);
-            end
-        else
-            
-            subplot(121)
-            topoplot(zeros(1,length(dim.chans)),dim.chans,'electrodes','off','emarker2',{chan2test,'o','k',5,1},'whitebk','on')
-            if isfield(cfg,'chandiff')
-                hold on
-                topoplot(zeros(1,length(dim.chans)),dim.chans,'electrodes','off','emarker2',{chan2test2,'o','r',5,1},'whitebk','on')
-            end
-            
-            subplot(122)
-            [l,p] = boundedline(tftime,squeeze(mean(X)),squeeze(std(X))./sqrt(nSubjects),'k','alpha','transparency',.1);
-            outlinebounds(l,p);
-            axis square
-            title('Single condition')
-            xlabel('Time (ms)'), ylabel('T-val')
-            yl=get(gca,'ylim');
-
-            hold on
-            plotclust = bwconncomp(threshmean,conn);
-            for blob=1:plotclust.NumObjects;
-                plot([tftime(plotclust.PixelIdxList{blob}(1)) tftime(plotclust.PixelIdxList{blob}(end))],[min(yl)+sum(abs(yl))/10 min(yl)+sum(abs(yl))/10],'color',[.5 .5 .5],'linewidth',4);
-            end
-            hold on
-            plotclust = bwconncomp(tmapthresh,conn);
-            for blob=1:plotclust.NumObjects;
-                plot([tftime(plotclust.PixelIdxList{blob}(1)) tftime(plotclust.PixelIdxList{blob}(end))],[min(yl)+sum(abs(yl))/20 min(yl)+sum(abs(yl))/20],'k','linewidth',4);
-            end
-            
+            topoplot(zeros(1,length(dim.chans)),dim.chans,'electrodes','off','emarker2',{chan2test2,'o','r',5,1},'whitebk','on')
         end
+        
+        subplot(223)
+        [l,p] = boundedline(tftime,squeeze(mean(X1)),squeeze(std(X1))./sqrt(nSubjects(1)),'b','alpha','transparency',.1);
+        outlinebounds(l,p);
+        h(1)=l;
+        [l,p] = boundedline(tftime,squeeze(mean(X2)),squeeze(std(X1))./sqrt(nSubjects(2)),'r','alpha','transparency',.1);
+        outlinebounds(l,p);
+        h(2)=l;
+        legend(h,'conA','conB');
+        yl=get(gca,'ylim');
+        
+        axis square
+        title('Conditions')
+        xlabel('Time (ms)'), ylabel('Raw activity')
+        
+        hold on
+        plotclust = bwconncomp(threshmean,conn);
+        for blob=1:plotclust.NumObjects;
+            
+            %plot([tftime(plotclust.PixelIdxList{blob}(1)) tftime(plotclust.PixelIdxList{blob}(end))],[min(yl)+sum(abs(yl))/20 min(yl)+sum(abs(yl))/20],'color',[.5 .5 .5],'linewidth',4);
+            plot([tftime(plotclust.PixelIdxList{blob}(1)) tftime(plotclust.PixelIdxList{blob}(end))],[-1 -1],'color',[.5 .5 .5],'linewidth',4);
+        end
+        
+        subplot(224)
+        [l,p] = boundedline(tftime,squeeze(mean(X1)-mean(X2)),  std(squeeze(cat(1,X1,X2))).*sqrt(1/nSubjects(1)+1/nSubjects(2)),'k','alpha','transparency',.1);
+        outlinebounds(l,p);
+        axis square
+        title('Difference')
+        xlabel('Time (ms)'), ylabel('T-val')
+        
+        hold on
+        plotclust = bwconncomp(tmapthresh,conn);
+        for blob=1:plotclust.NumObjects;
+            %plot([tftime(plotclust.PixelIdxList{blob}(1)) tftime(plotclust.PixelIdxList{blob}(end))],[min(yl)+sum(abs(yl))/20 min(yl)+sum(abs(yl))/20],'k','linewidth',4);
+            plot([tftime(plotclust.PixelIdxList{blob}(1)) tftime(plotclust.PixelIdxList{blob}(end))],[-1 -1],'k','linewidth',4);
+
+        end
+        
         
     end
     if isfield(cfg,'cmap')

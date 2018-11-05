@@ -20,8 +20,11 @@ if isfield(cfg,'mask');
     if sum(ismember(dim.times,mask.time))<length(dim.times)
         
         tfdat = tfdat(:,:,:,ismember(dim.times,mask.time));
-        mask.tmapthresh = mask.tmapthresh(:,ismember(mask.time,dim.times));
-        
+        try % if it is freq-time
+            mask.tmapthresh = mask.tmapthresh(:,ismember(mask.time,dim.times));
+        catch me % then it must be time only
+            mask.tmapthresh = mask.tmapthresh(ismember(mask.time,dim.times));
+        end            
         dim.times = dim.times(ismember(dim.times,mask.time));        
         mask.time = mask.time(ismember(mask.time,dim.times));
     end
@@ -53,7 +56,7 @@ for maski = 1:nmasks
     
     if isfield(cfg,'mask')
         fprintf('Performing %i permutations of win/clust %i:\n',nperm,nmasks);
-        if isfield(mask.cfg_prev,'mask') || strcmp(mask.cfg_prev.avgoverfreq,'yes')
+        if isfield(mask.cfg_prev,'mask') || (isfield (mask.cfg_prev,'avgoverfreq') && strcmp(mask.cfg_prev.avgoverfreq,'yes'))
             % if we use a statistical mask for averaging over time/freq, we
             % need to check whether that mask was a result of another
             % statistical mask, which resulted in averaging over one
@@ -304,12 +307,12 @@ for maski = 1:nmasks
     clusts2remove = find(abs(pos_clusters.tval)<clust_threshold);
     pos_clusters.tval(clusts2remove)=[];
     pos_clusters.label(clusts2remove)=[];
-    pos_clusters.pvals(clusts2remove)=[];
+    pos_clusters.pvals = sort(pos_clusters.pvals,'ascend');
     
     clusts2remove = find(abs(neg_clusters.tval)<clust_threshold);
     neg_clusters.tval(clusts2remove)=[];
     neg_clusters.label(clusts2remove)=[];
-    neg_clusters.pvals(clusts2remove)=[];
+    neg_clusters.pvals = sort(neg_clusters.pvals,'ascend');
     
     % channel indices of clusters, for plotting
     elecs2plot_lab = [neg_clusters.label{:},pos_clusters.label{:}]; % left electrodes; contralateral to right cues

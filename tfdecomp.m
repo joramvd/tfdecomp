@@ -68,6 +68,8 @@ function [tf_pow, varargout] = tfdecomp(cfg,eegdat,varargin)
 % -- as X, in Y=a+bX+e; the b-values will be stored for output; this requires
 % -- the regressors (cell array with cell per condition, each cell with
 % -- trial-by-regressors matrix) as a third input argument
+% -- default when set to 'true': stats.t value of robustfit output (ratio of 
+% -- b-value to standard error); alternatively provide requested output here (e.g. 'se')
 % cfg.robfit = true; 
 %
 % -- frequency, time and baseline info:
@@ -77,7 +79,7 @@ function [tf_pow, varargout] = tfdecomp(cfg,eegdat,varargin)
 % cfg.times2save = -200:25:1000;
 % cfg.basetime = [-500 -200];
 % cfg.baselinetype = 'conavg'; % 'conavg' or 'conspec'
-% cfg.erpsubract = false; % if true, non-phase-locked (i.e. "induced") power will be computed by subtracting the ERP from each single trial
+% cfg.erpsubtract = false; % if true, non-phase-locked (i.e. "induced") power will be computed by subtracting the ERP from each single trial
 % cfg.matchtrialn = true; % if true, conditions will be equated in terms of trial count (so SNR is comparable across conditions)
 %
 % -- other administrative stuff:
@@ -108,14 +110,20 @@ for fieldi = 1:length(fields2check)
     end
 end
 
+if robfit == true
+    robfit = 't';
+end
+
 % check output dir
-if ~exist(writdir,'dir')
-    mkdir(writdir)
+if save_output
+    if ~exist(writdir,'dir')
+        mkdir(writdir)
+    end
+    if strcmp(writdir(end),filesep)==0
+        writdir = [writdir filesep];
+    end
+    disp(writdir)
 end
-if strcmp(writdir(end),filesep)==0
-    writdir = [writdir filesep];
-end
-disp(writdir)
 
 % frequencies
 if strcmp(scale,'log')
@@ -144,8 +152,10 @@ nconds = length(eegdat);
 
 %% start
 
-outputfilename = [writdir filename];
-disp(outputfilename)
+if save_output
+    outputfilename = [writdir filename];
+    disp(outputfilename)
+end
 
 %% optional ERP subraction to compute non-phase locked power
 
@@ -155,7 +165,7 @@ end
 
 %% optional regressor extraction for robustfit
 
-if robfit || strcmp(connectivity,'wispc')
+if sum(robfit~=false) || strcmp(connectivity,'wispc')
     regressors = varargin{1};
     nreg = size(regressors{1},2);
 end
@@ -171,7 +181,7 @@ if matchtrialn
             if relock
                 startpoint{condi} = startpoint{condi}(sort(trialsel(1:nmin)));
             end
-            if robfit || strcmp(connectivity,'wispc')
+            if sum(robfit~=false) || strcmp(connectivity,'wispc')
                 regressors{condi} = regressors{condi}(sort(trialsel(1:nmin)),:);
             end
             ntrials(condi)=nmin;
@@ -188,7 +198,7 @@ for ti=1:length(times2save)
 end
 
 % baseline time indices
-if sum(basetime)
+if sum(abs(basetime))
     
     [~,basetimeidx(1)] = min(abs(eegtime-basetime(1)));
     [~,basetimeidx(2)] = min(abs(eegtime-basetime(2)));
@@ -206,7 +216,7 @@ if sum(basetime)
                 eegdat{condi}(:,:,nobasetrial==1)=[];
                 ntrials(condi) = size(eegdat{condi},3);
                 startpoint{condi}(nobasetrial==1)=[];
-                if robfit
+                if sum(robfit~=false)
                     regressors{condi}(nobasetrial==1,:)=[];
                 end
             end
@@ -219,14 +229,14 @@ end
 if singletrial
     tf_pow = cell(size(eegdat));
     tf_phase = NaN;
-elseif robfit
+elseif sum(robfit~=false)
     tf_rvals = zeros(nconds,length(channels),nfreqs,length(times2saveidx),size(regressors{1},2));
 else
     [tf_pow, tf_phase] = deal(zeros(nconds,length(channels),nfreqs,length(times2saveidx)));
 end
 if  strcmp(connectivity,'both')
     tf_sync  = zeros(nconds,length(seeds),length(channels),nfreqs,length(times2saveidx),2);
-elseif strcmp(connectivity,'pli') || strcmp(connectivity,'ispc')
+elseif strcmp(connectivity,'pli') || strcmp(connectivity,'pliZ') || strcmp(connectivity,'ispc')
     tf_sync  = zeros(nconds,length(seeds),length(channels),nfreqs,length(times2saveidx));
 elseif strcmp(connectivity,'wispc')
     tf_sync  = zeros(nconds,length(seeds),length(channels),nfreqs,length(times2saveidx),nreg);
@@ -276,7 +286,7 @@ for condi=1:nconds
             rawconv(chani,fi,:,:) = m(times2saveidx,:);
             
             % baseline power
-            if sum(basetime)
+            if sum(abs(basetime))
                 if relock
                     for ei=1:size(m,2)
                         basetimeshift = basetimeidx - startpoint{condi}(ei) + 1;
@@ -289,11 +299,11 @@ for condi=1:nconds
             end
             
             % robust regression
-            if robfit
+            if sum(robfit~=false)
                 for ti=1:length(times2saveidx)
                     
-                    [tempR,stats]=robustfit(regressors{condi},log(abs(m(times2saveidx(ti),:)').^2));
-                    tf_rvals(condi,chani,fi,ti,:) = tempR(2:end)./stats.se(2:end);
+                    [~,stats]=robustfit(regressors{condi},log10(abs(m(times2saveidx(ti),:)').^2));
+                    eval(['tf_rvals(condi,chani,fi,ti,:) = stats.' robfit '(2:end);']);
                     if ti==1
                         w = warning('query','last');
                         warning('off',w.identifier);
@@ -331,12 +341,38 @@ for condi=1:nconds
                 end
                 
                 % weighted phase-lag index (eq. 8 in Vink et al. NeuroImage 2011)
-                if strcmp(connectivity,'pli') || strcmp(connectivity,'both')
+                if strcmp(connectivity,'pli') || strcmp(connectivity, 'pliZ') || strcmp(connectivity,'both')
                     imagsum      = sum(imag(csdm),3);
                     imagsumW     = sum(abs(imag(csdm)),3);
                     debiasfactor = sum(imag(csdm).^2,3);
                     tmppli = (imagsum.^2 - debiasfactor)./(imagsumW.^2 - debiasfactor);
                 end
+                
+                if strcmp(connectivity, 'pliZ')
+                    
+                    % permutation testing
+                    if ~isfield(cfg,'nperm')
+                        nperm=500;
+                    end
+                    fakepli = zeros(nperm,length(frex),length(times2save));
+                    
+                    for permi=1:nperm
+                        
+                        cutLoc = 2 + randperm(length(times2saveidx)-4); cutLoc=cutLoc(1);
+                        time_shuffle = sign(randn(ntrials(condi),1));
+                        
+                        conv_trial = squeeze(rawconv(strcmpi(seeds{chanx},{chanlocs.labels}),:,:,randperm(ntrials(condi))));
+                        conv_time  = squeeze(rawconv(chany,:,:,:));
+                        conv_time(:,:,time_shuffle==1) = conv_time(:,[cutLoc:end 1:cutLoc-1],time_shuffle==1);
+
+                        csdm = squeeze(conv_trial .* conj(conv_time));
+                        imagsum      = sum(imag(csdm),3);
+                        imagsumW     = sum(abs(imag(csdm)),3);
+                        debiasfactor = sum(imag(csdm).^2,3);
+                        fakepli(permi,:,:) = (imagsum.^2 - debiasfactor)./(imagsumW.^2 - debiasfactor);
+                    end
+                end
+                
                 
                 if strcmp(connectivity,'wispc')
                     
@@ -363,6 +399,8 @@ for condi=1:nconds
                     tf_sync(condi,chanx,chany,:,:) = tmpsync;
                 elseif strcmp(connectivity,'pli')
                     tf_sync(condi,chanx,chany,:,:) = tmppli;
+                elseif strcmp(connectivity, 'pliZ')
+                    tf_sync(condi,chanx,chany,:,:) = (tmppli - squeeze(mean(fakepli))) ./ squeeze(std(fakepli));
                 elseif strcmp(connectivity,'both')
                     tf_sync(condi,chanx,chany,:,:,1) = tmpsync;
                     tf_sync(condi,chanx,chany,:,:,2) = tmppli;
@@ -381,7 +419,7 @@ for condi=1:nconds
     % single trial power
     if singletrial
         tf_pow{condi} = abs(rawconv).^2;
-    elseif sum(basetime)
+    elseif sum(abs(basetime))
         tf_pow(condi,:,:,:)   = mean(abs(rawconv).^2,4); % raw power; baseline correction is done after the condition loop
         tf_phase(condi,:,:,:) = abs(mean(exp(1i*angle(rawconv)),4));
     end
@@ -389,7 +427,7 @@ for condi=1:nconds
 end % end condition loop
 
 %% db convert: condition-specific baseline
-if sum(basetime)
+if sum(abs(basetime))
     if strcmp(baselinetype,'conspec')
         tf_pow = 10*log10( tf_pow ./ repmat(baselinedata,[ 1 1 1 length(times2save) ]) );
     elseif strcmp(baselinetype,'conavg')
@@ -413,8 +451,8 @@ dim.ntrials = ntrials;
 dim.cfg_prev = cfg;
 
 % specifiy output arguments
-if connectivity & ~robfit
-    if sum(basetime)
+if connectivity & sum(robfit~=false)==0
+    if sum(abs(basetime))
         varargout{1} = tf_phase;
         varargout{2} = tf_sync;
         varargout{3} = dim;
@@ -422,8 +460,8 @@ if connectivity & ~robfit
         tf_pow = tf_sync;
         varargout{1} = dim;
     end
-elseif connectivity & robfit
-    if sum(basetime)
+elseif connectivity & sum(robfit~=false)
+    if sum(abs(basetime))
         varargout{1} = tf_phase;
         varargout{2} = tf_sync;
         varargout{3} = tf_rvals;
@@ -433,8 +471,8 @@ elseif connectivity & robfit
         varargout{1} = tf_sync;
         varargout{2} = dim;
     end
-elseif robfit & ~connectivity
-    if sum(basetime)
+elseif sum(robfit~=false) & ~connectivity
+    if sum(abs(basetime))
         varargout{1} = tf_phase;
         varargout{2} = tf_rvals;
         varargout{3} = dim;
@@ -449,20 +487,20 @@ end
 
 %% save results
 if save_output
-    if robfit && connectivity
-        if sum(basetime)
+    if sum(robfit~=false) & connectivity
+        if sum(abs(basetime))
             save(outputfilename,'tf_rvals','tf_sync','tf_pow','tf_phase','dim');
         else
             save(outputfilename,'tf_rvals','tf_sync','dim');
         end
     elseif connectivity
-        if sum(basetime)
+        if sum(abs(basetime))
             save(outputfilename,'tf_pow','tf_phase','tf_sync','dim');
         else
             save(outputfilename,'tf_sync','dim');
         end
-    elseif robfit
-        if sum(basetime)
+    elseif sum(robfit~=false)
+        if sum(abs(basetime))
             save(outputfilename,'tf_rvals','tf_pow','tf_phase','dim');
         else
             save(outputfilename,'tf_rvals','dim');

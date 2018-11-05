@@ -119,8 +119,10 @@ for testi=1:ntests
         cfg.foi = [dim.freqs(foi(1)) dim.freqs(foi(end))];
         fprintf('Selected %s - %s Hz...\n',num2str(round(dim.freqs(foi(1))*10)/10),num2str(round(dim.freqs(foi(end))*10)/10))
         X = mean(origX(:,foi,:),2);
-        X1 = mean(origX1(:,foi,:),2);
-        X2 = mean(origX2(:,foi,:),2);
+        if ~isempty(varargin)
+            X1 = mean(origX1(:,foi,:),2);
+            X2 = mean(origX2(:,foi,:),2);
+        end
     end
     nSubjects = size(tfdata,1);
     voxel_pval   = pval;
@@ -168,7 +170,6 @@ for testi=1:ntests
         [~,~,~,tmp] = ttest(squeeze(temp_permute));
         
         faketmap = squeeze(tmp.tstat);
-        faketmap(abs(faketmap)<tinv(1-voxel_pval/2,nSubjects-1))=0;
         if ~isfield(cfg,'tail')
             faketmap(abs(faketmap)<tinv(1-voxel_pval/2,nSubjects-1))=0;
         elseif strcmp(tail,'left')
@@ -233,7 +234,8 @@ for testi=1:ntests
         contourf(tftime,tffrex,squeeze(tmap),40,'linecolor','none')
         cmax=max(abs(get(gca,'clim')));
         axis square
-        set(gca,'clim',[-cmax cmax],'yscale','log','ytick',[round(logspace(log10(min(tffrex)),log10(max(tffrex)),5))] )
+%         set(gca,'clim',[-cmax cmax],'yscale','log','ytick',[round(logspace(log10(min(tffrex)),log10(max(tffrex)),5))] )
+        set(gca,'clim',[-cmax cmax],'ytick',[round(linspace((min(tffrex)),(max(tffrex)),5))] )
         title('unthresholded t-map')
         xlabel('Time (ms)'), ylabel('Frequency (Hz)')
         
@@ -250,7 +252,8 @@ for testi=1:ntests
         axis square
         hold on
         contour(tftime,tffrex,abs(threshmean)>0,1,'k');
-        set(gca,'clim',[-cmax cmax],'yscale','log','ytick',[round(logspace(log10(min(tffrex)),log10(max(tffrex)),5))] )
+%         set(gca,'clim',[-cmax cmax],'yscale','log','ytick',[round(logspace(log10(min(tffrex)),log10(max(tffrex)),5))] )
+        set(gca,'clim',[-cmax cmax],'ytick',[round(linspace((min(tffrex)),(max(tffrex)),5))] )
         title('Uncorrected power map')
         xlabel('Time (ms)'), ylabel('Frequency (Hz)')
         
@@ -258,7 +261,8 @@ for testi=1:ntests
         contourf(tftime,tffrex,tmapthresh,40,'linecolor','none')
         cmax=max(abs(get(gca,'clim')));
         axis square
-        set(gca,'clim',[-cmax cmax],'yscale','log','ytick',[round(logspace(log10(min(tffrex)),log10(max(tffrex)),5))] )
+%         set(gca,'clim',[-cmax cmax],'yscale','log','ytick',[round(logspace(log10(min(tffrex)),log10(max(tffrex)),5))] )
+        set(gca,'clim',[-cmax cmax],'ytick',[round(linspace((min(tffrex)),(max(tffrex)),5))] )
         title('Cluster-corrected t-map')
         xlabel('Time (ms)'), ylabel('Frequency (Hz)')
     end
